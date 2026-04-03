@@ -4414,12 +4414,14 @@ let db = null, fbAuth = null;
 
 function initFirebase() {
   const firebaseConfig = {
-    apiKey: "AIzaSyAvh0Q1H6g3I_SjODZelGvJnGKSFl2cGL8",
+    apiKey: "AIzaSyA4qkcuhr5artffV5qwUZq6cZV70xN7ME8",
     authDomain: "clickpin-a3851.firebaseapp.com",
+    databaseURL: "https://clickpin-a3851-default-rtdb.firebaseio.com",
     projectId: "clickpin-a3851",
     storageBucket: "clickpin-a3851.firebasestorage.app",
     messagingSenderId: "827825997891",
-    appId: "1:827825997891:web:99331ddb1130d65544acf6"
+    appId: "1:827825997891:web:f6a345ebd7a0785d44acf6",
+    measurementId: "G-MXTCQB428F"
   };
   if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
