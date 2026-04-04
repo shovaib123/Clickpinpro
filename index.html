@@ -2284,21 +2284,22 @@ function handleFileSelect(inp){
   };r.readAsDataURL(f);
 }
 
-// Cloudinary pe upload karo — compressed
+// Cloudinary pe upload karo — heavily compressed for speed
 async function uploadToCloudinary(file) {
   const isVideo = file.type.startsWith('video');
-
-  // Image ko compress karo upload se pehle (speed ke liye)
   let uploadFile = file;
-  if (!isVideo && file.size > 500 * 1024) { // 500KB se bada ho to compress
+
+  if (!isVideo) {
+    // Hamesha compress karo — speed ke liye
     uploadFile = await compressImage(file);
+    console.log(`Compressed: ${(file.size/1024).toFixed(0)}KB → ${(uploadFile.size/1024).toFixed(0)}KB`);
   }
 
   const formData = new FormData();
   formData.append('file', uploadFile);
   formData.append('upload_preset', CLOUDINARY_PRESET);
 
-  const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/${isVideo ? 'video' : 'image'}/upload`;
+  const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`;
   const res = await fetch(url, { method: 'POST', body: formData });
   if (!res.ok) throw new Error('Upload failed: ' + res.status);
   const data = await res.json();
@@ -2306,7 +2307,7 @@ async function uploadToCloudinary(file) {
   return data.secure_url;
 }
 
-// Image compress function
+// Aggressive compression — max 800px, 65% quality = very fast upload
 function compressImage(file) {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -2315,17 +2316,16 @@ function compressImage(file) {
       img.onload = () => {
         const canvas = document.createElement('canvas');
         let w = img.width, h = img.height;
-        const MAX = 1200;
+        const MAX = 800; // max 800px — fast upload
         if (w > MAX || h > MAX) {
-          if (w > h) { h = h * MAX / w; w = MAX; }
-          else { w = w * MAX / h; h = MAX; }
+          if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+          else { w = Math.round(w * MAX / h); h = MAX; }
         }
         canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, w, h);
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
         canvas.toBlob((blob) => {
-          resolve(new File([blob], file.name, { type: 'image/jpeg' }));
-        }, 'image/jpeg', 0.82);
+          resolve(new File([blob], 'img.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.65); // 65% quality = ~5x faster
       };
       img.src = e.target.result;
     };
@@ -2388,37 +2388,61 @@ async function submitPin(){
     user : currentUser
   };
 
-  // ✅ FIRESTORE MEIN SAVE — pehle save karo, phir show karo
+  // ✅ FIRESTORE MEIN SAVE — Firebase auth wait karo
   const loggedUser = JSON.parse(localStorage.getItem('cp_current_user') || 'null');
-  const firebaseUser = fbAuth ? fbAuth.currentUser : null;
-  const userId = firebaseUser ? firebaseUser.uid : (loggedUser ? loggedUser.uid || loggedUser.email : null);
+
+  // Firebase currentUser ka wait karo (max 3 seconds)
+  let firebaseUid = null;
+  if (fbAuth) {
+    try {
+      await new Promise((resolve) => {
+        if (fbAuth.currentUser) {
+          firebaseUid = fbAuth.currentUser.uid;
+          resolve();
+        } else {
+          const unsubscribe = fbAuth.onAuthStateChanged((user) => {
+            unsubscribe();
+            if (user) firebaseUid = user.uid;
+            resolve();
+          });
+          setTimeout(resolve, 3000); // 3 sec timeout
+        }
+      });
+    } catch(e) {}
+  }
+
+  // userId — Firebase uid preferred, phir localStorage uid/email
+  const userId = firebaseUid || (loggedUser ? loggedUser.uid || loggedUser.email : null);
+  console.log('Save attempt — userId:', userId, 'db:', !!db);
 
   if (db && userId) {
     try {
       toast('💾 Saving...');
       const docRef = await db.collection('posts').add({
-        id      : np.id,
-        type    : np.type,
-        src     : finalSrc,           // Cloudinary URL
-        vid     : finalVid || '',
-        title   : np.title,
-        desc    : np.desc,
-        cat     : np.cat,
-        likes   : 0,
-        userId  : userId,
-        userName: currentUser.name,
+        id        : np.id,
+        type      : np.type,
+        src       : finalSrc,
+        vid       : finalVid || '',
+        title     : np.title,
+        desc      : np.desc,
+        cat       : np.cat,
+        likes     : 0,
+        userId    : userId,
+        userName  : currentUser.name,
         userAvatar: currentUser.avatar || '',
-        createdAt: new Date().toISOString()
+        createdAt : new Date().toISOString()
       });
       np.firestoreId = docRef.id;
-      console.log('✅ Firestore save success:', docRef.id);
+      np.firestoreUserId = userId;
+      console.log('✅ Firestore saved! Doc:', docRef.id);
       toast('✅ Post save ho gayi!');
     } catch(e) {
-      console.error('Firestore save error:', e);
+      console.error('Firestore error:', e.code, e.message);
       toast('⚠️ Save fail: ' + e.message);
     }
   } else {
-    console.log('Firestore skip — db:', !!db, 'userId:', userId);
+    console.warn('Firestore SKIPPED — db:', !!db, 'userId:', userId);
+    toast('⚠️ Login check karo — post locally dikhi');
   }
 
   PIN_DATA.unshift(np);
