@@ -2284,20 +2284,53 @@ function handleFileSelect(inp){
   };r.readAsDataURL(f);
 }
 
-// Cloudinary pe upload karo
+// Cloudinary pe upload karo — compressed
 async function uploadToCloudinary(file) {
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('upload_preset', CLOUDINARY_PRESET);
-  formData.append('cloud_name', CLOUDINARY_CLOUD);
-
   const isVideo = file.type.startsWith('video');
-  const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/${isVideo ? 'video' : 'image'}/upload`;
 
+  // Image ko compress karo upload se pehle (speed ke liye)
+  let uploadFile = file;
+  if (!isVideo && file.size > 500 * 1024) { // 500KB se bada ho to compress
+    uploadFile = await compressImage(file);
+  }
+
+  const formData = new FormData();
+  formData.append('file', uploadFile);
+  formData.append('upload_preset', CLOUDINARY_PRESET);
+
+  const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/${isVideo ? 'video' : 'image'}/upload`;
   const res = await fetch(url, { method: 'POST', body: formData });
-  if (!res.ok) throw new Error('Upload failed');
+  if (!res.ok) throw new Error('Upload failed: ' + res.status);
   const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
   return data.secure_url;
+}
+
+// Image compress function
+function compressImage(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let w = img.width, h = img.height;
+        const MAX = 1200;
+        if (w > MAX || h > MAX) {
+          if (w > h) { h = h * MAX / w; w = MAX; }
+          else { w = w * MAX / h; h = MAX; }
+        }
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob((blob) => {
+          resolve(new File([blob], file.name, { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.82);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 // Drag and drop
@@ -3377,11 +3410,21 @@ function renderProfileTab(tab, query) {
   const name = myClickPinName || 'ClickPin User';
   if (tab === 'pins') {
     const uid = myClickPinId || '';
-    let pins = PIN_DATA.filter(p => p.user && (
-      p.user.name.toLowerCase() === name.toLowerCase() ||
-      p.user.name === uid ||
-      p.user.name === uid.replace('@','')
-    ));
+    const loggedUser = JSON.parse(localStorage.getItem('cp_current_user') || 'null');
+    const firebaseUid = loggedUser ? (loggedUser.uid || loggedUser.email) : '';
+
+    let pins = PIN_DATA.filter(p => {
+      // Match by user name
+      if (p.user && p.user.name) {
+        const pName = p.user.name.toLowerCase();
+        if (pName === name.toLowerCase()) return true;
+        if (pName === uid.toLowerCase()) return true;
+        if (pName === uid.replace('@','').toLowerCase()) return true;
+      }
+      // Match by firestore userId (most reliable)
+      if (p.firestoreUserId && firebaseUid && p.firestoreUserId === firebaseUid) return true;
+      return false;
+    });
     if (query) pins = pins.filter(p => p.title.toLowerCase().includes(query.toLowerCase()));
     if (!pins.length) {
       el.innerHTML = `<div class="empty-tab"><span class="empty-tab-ic">📌</span><p>Abhi koi post nahi.<br>Upload</p><button onclick="openCreateSheet()" style="background:var(--red);color:#fff;border:none;padding:10px 22px;border-radius:20px;font-size:13px;font-weight:700;cursor:pointer">+ Post Upload</button></div>`;
@@ -4513,16 +4556,17 @@ async function loadUserPostsFromFirestore(uid, currentUser) {
       const exists = PIN_DATA.some(p => p.firestoreId === doc.id);
       if (!exists) {
         PIN_DATA.unshift({
-          id         : data.id || parseInt(doc.id.substring(0,8), 16) || Date.now(),
-          firestoreId: doc.id,
-          type       : data.type || 'image',
-          src        : srcUrl,
-          vid        : data.vid || null,
-          title      : data.title || 'My Post',
-          desc       : data.desc || '',
-          cat        : data.cat || 'Ghar',
-          likes      : data.likes || 0,
-          user       : {
+          id              : data.id || parseInt(doc.id.substring(0,8), 16) || Date.now(),
+          firestoreId     : doc.id,
+          firestoreUserId : data.userId || '',
+          type            : data.type || 'image',
+          src             : srcUrl,
+          vid             : data.vid || null,
+          title           : data.title || 'My Post',
+          desc            : data.desc || '',
+          cat             : data.cat || 'Ghar',
+          likes           : data.likes || 0,
+          user            : {
             name     : data.userName || currentUser.name,
             avatar   : data.userAvatar || localStorage.getItem('cp_avatar') || `https://i.pravatar.cc/60?img=1`,
             followers: '0'
