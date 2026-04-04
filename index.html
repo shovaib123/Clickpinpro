@@ -2355,15 +2355,24 @@ async function submitPin(){
     user : currentUser
   };
 
-  // Firestore mein bhi save karo agar logged in hai
-  if(db && fbAuth && fbAuth.currentUser) {
+  // ✅ FIRESTORE MEIN SAVE KARO — multiple auth methods check karo
+  const loggedUser = JSON.parse(localStorage.getItem('cp_current_user') || 'null');
+  const firebaseUser = fbAuth ? fbAuth.currentUser : null;
+  const userId = firebaseUser ? firebaseUser.uid : (loggedUser ? loggedUser.email : null);
+
+  if (db && userId) {
     try {
-      await db.collection('posts').add({
+      const docRef = await db.collection('posts').add({
         ...np,
-        userId: fbAuth.currentUser.uid,
+        userId: userId,
         createdAt: new Date().toISOString()
       });
-    } catch(e) { console.log('Firestore save error:', e); }
+      np.firestoreId = docRef.id;
+      toast('☁️ Firestore mein save ho gaya!');
+    } catch(e) {
+      console.log('Firestore save error:', e);
+      toast('⚠️ Cloud save fail — post locally dikh rahi hai');
+    }
   }
 
   PIN_DATA.unshift(np);
@@ -4430,7 +4439,6 @@ function initFirebase() {
   // Auth state listener — jab bhi login/logout ho
   fbAuth.onAuthStateChanged(async (user) => {
     if (user) {
-      // Firestore se user data lo
       try {
         const doc = await db.collection('users').doc(user.uid).get();
         const data = doc.exists ? doc.data() : {};
@@ -4447,8 +4455,12 @@ function initFirebase() {
         localStorage.setItem('cp_user_id', currentUser.cpid);
         cpUpdateAuthUI(currentUser);
 
-        // Saved posts load karo Firestore se
+        // Saved posts load karo
         loadSavedFromFirestore(user.uid);
+
+        // ✅ USER KE POSTS FIRESTORE SE LOAD KARO
+        loadUserPostsFromFirestore(user.uid, currentUser);
+
       } catch(e) {
         console.log('Firestore error:', e);
       }
@@ -4471,6 +4483,69 @@ async function loadSavedFromFirestore(uid) {
       applyFilters();
     }
   } catch(e) {}
+}
+
+// ✅ USER KE POSTS FIRESTORE SE LOAD KARO — refresh pe bhi dikhein
+async function loadUserPostsFromFirestore(uid, currentUser) {
+  if (!db) return;
+  try {
+    const snapshot = await db.collection('posts')
+      .where('userId', '==', uid)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    if (snapshot.empty) return;
+
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      // Check karo already PIN_DATA mein hai ya nahi
+      const exists = PIN_DATA.some(p => p.firestoreId === doc.id);
+      if (!exists) {
+        PIN_DATA.unshift({
+          id: data.id || Date.now(),
+          firestoreId: doc.id,
+          type: data.type || 'image',
+          src: data.src,
+          vid: data.vid || null,
+          title: data.title,
+          desc: data.desc || '',
+          cat: data.cat || 'Ghar',
+          likes: data.likes || 0,
+          user: data.user || {
+            name: currentUser.name,
+            avatar: `https://i.pravatar.cc/60?img=1`,
+            followers: '0'
+          }
+        });
+      }
+    });
+    applyFilters();
+  } catch(e) {
+    console.log('Posts load error:', e);
+    // Agar index error ho, bina orderBy try karo
+    try {
+      const snapshot2 = await db.collection('posts').where('userId', '==', uid).get();
+      snapshot2.forEach(doc => {
+        const data = doc.data();
+        const exists = PIN_DATA.some(p => p.firestoreId === doc.id);
+        if (!exists) {
+          PIN_DATA.unshift({
+            id: data.id || Date.now(),
+            firestoreId: doc.id,
+            type: data.type || 'image',
+            src: data.src,
+            vid: data.vid || null,
+            title: data.title,
+            desc: data.desc || '',
+            cat: data.cat || 'Ghar',
+            likes: data.likes || 0,
+            user: data.user || { name: currentUser.name, avatar: `https://i.pravatar.cc/60?img=1`, followers: '0' }
+          });
+        }
+      });
+      applyFilters();
+    } catch(e2) { console.log('Fallback load error:', e2); }
+  }
 }
 
 // Saved posts Firestore mein save karo
