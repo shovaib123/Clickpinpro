@@ -4501,82 +4501,64 @@ async function loadSavedFromFirestore(uid) {
 // ✅ USER KE POSTS FIRESTORE SE LOAD KARO — refresh pe bhi dikhein
 async function loadUserPostsFromFirestore(uid, currentUser) {
   if (!db) return;
-  try {
-    const snapshot = await db.collection('posts')
-      .where('userId', '==', uid)
-      .orderBy('createdAt', 'desc')
-      .get();
 
-    if (snapshot.empty) {
-      console.log('Firestore mein koi post nahi for uid:', uid);
-      return;
-    }
-
+  const processSnapshot = (snapshot) => {
     let added = 0;
     snapshot.forEach(doc => {
       const data = doc.data();
-      const exists = PIN_DATA.some(p => p.firestoreId === doc.id || p.id === data.id);
-      if (!exists && data.src) {
+      // Support both old format (imageUrl) and new format (src)
+      const srcUrl = data.src || data.imageUrl || '';
+      if (!srcUrl) return;
+
+      const exists = PIN_DATA.some(p => p.firestoreId === doc.id);
+      if (!exists) {
         PIN_DATA.unshift({
-          id         : data.id || Date.now(),
+          id         : data.id || parseInt(doc.id.substring(0,8), 16) || Date.now(),
           firestoreId: doc.id,
           type       : data.type || 'image',
-          src        : data.src,
+          src        : srcUrl,
           vid        : data.vid || null,
-          title      : data.title || 'Post',
+          title      : data.title || 'My Post',
           desc       : data.desc || '',
           cat        : data.cat || 'Ghar',
           likes      : data.likes || 0,
           user       : {
             name     : data.userName || currentUser.name,
-            avatar   : data.userAvatar || `https://i.pravatar.cc/60?img=1`,
+            avatar   : data.userAvatar || localStorage.getItem('cp_avatar') || `https://i.pravatar.cc/60?img=1`,
             followers: '0'
           }
         });
         added++;
       }
     });
+    return added;
+  };
 
+  try {
+    const snapshot = await db.collection('posts')
+      .where('userId', '==', uid)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    const added = processSnapshot(snapshot);
     if (added > 0) {
       console.log('✅ Firestore se', added, 'posts load hue');
       applyFilters();
+    } else {
+      console.log('Koi nayi post nahi mili uid:', uid);
     }
 
   } catch(e) {
-    console.log('Posts load error (trying without orderBy):', e.message);
-    // Fallback — bina orderBy ke
+    console.log('orderBy fail, trying without:', e.message);
     try {
       const snapshot2 = await db.collection('posts').where('userId', '==', uid).get();
-      let added2 = 0;
-      snapshot2.forEach(doc => {
-        const data = doc.data();
-        const exists = PIN_DATA.some(p => p.firestoreId === doc.id || p.id === data.id);
-        if (!exists && data.src) {
-          PIN_DATA.unshift({
-            id         : data.id || Date.now(),
-            firestoreId: doc.id,
-            type       : data.type || 'image',
-            src        : data.src,
-            vid        : data.vid || null,
-            title      : data.title || 'Post',
-            desc       : data.desc || '',
-            cat        : data.cat || 'Ghar',
-            likes      : data.likes || 0,
-            user       : {
-              name     : data.userName || currentUser.name,
-              avatar   : data.userAvatar || `https://i.pravatar.cc/60?img=1`,
-              followers: '0'
-            }
-          });
-          added2++;
-        }
-      });
+      const added2 = processSnapshot(snapshot2);
       if (added2 > 0) {
         console.log('✅ Fallback se', added2, 'posts load hue');
         applyFilters();
       }
     } catch(e2) {
-      console.error('Fallback load bhi fail:', e2.message);
+      console.error('Posts load completely failed:', e2.message);
     }
   }
 }
