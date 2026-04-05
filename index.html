@@ -2290,20 +2290,35 @@ async function uploadToCloudinary(file) {
   let uploadFile = file;
 
   if (!isVideo) {
-    // Hamesha compress karo — speed ke liye
+    toast('🔄 Image compress ho rahi hai...');
     uploadFile = await compressImage(file);
-    console.log(`Compressed: ${(file.size/1024).toFixed(0)}KB → ${(uploadFile.size/1024).toFixed(0)}KB`);
   }
 
   const formData = new FormData();
   formData.append('file', uploadFile);
   formData.append('upload_preset', CLOUDINARY_PRESET);
 
-  const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`;
-  const res = await fetch(url, { method: 'POST', body: formData });
-  if (!res.ok) throw new Error('Upload failed: ' + res.status);
+  toast('📤 Cloudinary pe bhej raha hai (' + Math.round(uploadFile.size/1024) + 'KB)...');
+
+  let res;
+  try {
+    res = await fetch(
+      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`,
+      { method: 'POST', body: formData }
+    );
+  } catch(networkErr) {
+    throw new Error('Network error — internet check karo: ' + networkErr.message);
+  }
+
+  if (!res.ok) {
+    const txt = await res.text().catch(()=>'');
+    throw new Error('Server error ' + res.status + ': ' + txt.substring(0,100));
+  }
+
   const data = await res.json();
-  if (data.error) throw new Error(data.error.message);
+  if (data.error) throw new Error('Cloudinary error: ' + data.error.message);
+  if (!data.secure_url) throw new Error('URL nahi mila Cloudinary se');
+
   return data.secure_url;
 }
 
@@ -2342,9 +2357,8 @@ dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('dragover'
 async function submitPin(){
   const title=document.getElementById('pinTitle').value.trim();
   if(!title){toast('⚠️ Title zaruri hai!');return;}
-  if(!upData && !upFile){toast('⚠️ Pehle file choose');return;}
+  if(!upData && !upFile){toast('⚠️ Pehle file choose karo');return;}
 
-  // Publish button disable karo
   const pubBtn = document.querySelector('.publish-btn');
   if(pubBtn){pubBtn.disabled=true;pubBtn.textContent='⏳ Upload ho raha hai...';}
 
@@ -2360,19 +2374,22 @@ async function submitPin(){
 
   let finalSrc = upData;
   let finalVid = upType !== 'image' ? upData : null;
+  let cloudinarySuccess = false;
 
-  // Cloudinary pe upload karo agar file available hai
+  // Step 1: Cloudinary upload
   if(upFile) {
+    toast('☁️ Step 1/2: Image upload ho rahi hai...');
     try {
-      toast('☁️ Cloud pe upload ho raha hai...');
       const cloudUrl = await uploadToCloudinary(upFile);
       finalSrc = cloudUrl;
       if(upType !== 'image') finalVid = cloudUrl;
-      toast('✅ Cloud upload ho gaya!');
+      cloudinarySuccess = true;
+      toast('✅ Image upload ho gayi! Ab save ho rahi hai...');
     } catch(err) {
-      console.error('Cloudinary error:', err);
-      toast('⚠️ Cloud upload fail — local save ho raha hai');
-      // fallback: base64 use karo
+      // Screen pe bada error dikhao
+      alert('❌ Image upload fail hui!\n\nKaran: ' + err.message + '\n\nInternet check karo ya dobara try karo.');
+      if(pubBtn){pubBtn.disabled=false;pubBtn.textContent='🚀 Publish';}
+      return; // Upload fail pe rok do — save mat karo
     }
   }
 
