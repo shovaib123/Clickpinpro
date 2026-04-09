@@ -2415,36 +2415,33 @@ async function submitPin(){
     user : currentUser
   };
 
-  // ✅ FIRESTORE MEIN SAVE — Firebase auth wait karo
+  // ✅ FIRESTORE MEIN SAVE
   const loggedUser = JSON.parse(localStorage.getItem('cp_current_user') || 'null');
 
-  // Firebase currentUser ka wait karo (max 3 seconds)
+  // Firebase uid lo — ya localStorage se email use karo as userId
   let firebaseUid = null;
-  if (fbAuth) {
-    try {
-      await new Promise((resolve) => {
-        if (fbAuth.currentUser) {
-          firebaseUid = fbAuth.currentUser.uid;
-          resolve();
-        } else {
-          const unsubscribe = fbAuth.onAuthStateChanged((user) => {
-            unsubscribe();
-            if (user) firebaseUid = user.uid;
-            resolve();
-          });
-          setTimeout(resolve, 3000); // 3 sec timeout
-        }
+  if (fbAuth && fbAuth.currentUser) {
+    firebaseUid = fbAuth.currentUser.uid;
+  } else if (fbAuth) {
+    // Wait karo max 2 sec
+    await new Promise((resolve) => {
+      const unsub = fbAuth.onAuthStateChanged((user) => {
+        unsub();
+        if (user) firebaseUid = user.uid;
+        resolve();
       });
-    } catch(e) {}
+      setTimeout(resolve, 2000);
+    });
   }
 
-  // userId — Firebase uid preferred, phir localStorage uid/email
-  const userId = firebaseUid || (loggedUser ? loggedUser.uid || loggedUser.email : null);
-  console.log('Save attempt — userId:', userId, 'db:', !!db);
+  // userId: Firebase uid > localStorage uid > localStorage email
+  const userId = firebaseUid 
+    || (loggedUser && loggedUser.uid) 
+    || (loggedUser && loggedUser.email) 
+    || null;
 
   if (db && userId) {
     try {
-      toast('💾 Saving...');
       const docRef = await db.collection('posts').add({
         id        : np.id,
         type      : np.type,
@@ -2461,15 +2458,13 @@ async function submitPin(){
       });
       np.firestoreId = docRef.id;
       np.firestoreUserId = userId;
-      console.log('✅ Firestore saved! Doc:', docRef.id);
-      toast('✅ Post save ho gayi!');
+      toast('🎉 Post publish ho gayi! Refresh pe bhi dikhegi ✅');
     } catch(e) {
-      console.error('Firestore error:', e.code, e.message);
-      toast('⚠️ Save fail: ' + e.message);
+      toast('⚠️ Cloud save fail: ' + e.message);
     }
   } else {
-    console.warn('Firestore SKIPPED — db:', !!db, 'userId:', userId);
-    toast('⚠️ Login check karo — post locally dikhi');
+    // userId nahi mila — phir bhi post dikhao locally
+    toast('🎉 Post publish ho gayi! (Login se cloud save hoga)');
   }
 
   PIN_DATA.unshift(np);
@@ -4567,6 +4562,8 @@ function initFirebase() {
 
         // ✅ USER KE POSTS FIRESTORE SE LOAD KARO
         loadUserPostsFromFirestore(user.uid, currentUser);
+        // Email se bhi try karo (purane posts ke liye)
+        if (user.email) loadUserPostsFromFirestore(user.email, currentUser);
 
       } catch(e) {
         console.log('Firestore error:', e);
