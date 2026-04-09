@@ -2276,7 +2276,7 @@ function switchUploadType(tp,btn){
   document.getElementById('dzText').textContent=tp==='reel'?'Vertical Reel upload (9:16 format best)':tp==='video'?'Video upload (MP4/MOV)':'Photo upload (PNG/JPG/WEBP)';
 }
 // ── CLOUDINARY CONFIG ──
-const CLOUDINARY_CLOUD = 'dtmzr5eq7';
+const CLOUDINARY_CLOUD = 'dtmxr5eq7';
 const CLOUDINARY_PRESET = 'clickpin_unsigned';
 let upFile = null; // actual file object store karo
 
@@ -2307,7 +2307,7 @@ async function uploadToCloudinary(file) {
   formData.append('upload_preset', 'clickpin_unsigned');
   // Note: api_key mat bhejo — unsigned preset ke saath sirf upload_preset chahiye
 
-  const CLOUD = 'dtmzr5eq7';
+  const CLOUD = 'dtmxr5eq7';
   toast('📤 Upload ho raha hai (' + Math.round(uploadFile.size/1024) + 'KB)...');
 
   let res;
