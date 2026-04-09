@@ -2073,15 +2073,25 @@ function dlFromDetail(){
   const url = (p.type==='video'||p.type==='reel') && p.vid ? p.vid : p.src;
   const filename = p.title.replace(/\s+/g,'_') + ((p.type==='video'||p.type==='reel')?'.mp4':'.jpg');
 
-  // Show download progress toast
   toast('⬇️ Download shuru ho rahi hai...');
 
   if(url.startsWith('data:')) {
+    // Base64 — direct download
     const a = document.createElement('a');
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(()=>toast('✅ "'+p.title+'" download ho gaya!'), 500);
+    toast('✅ Download ho gaya!');
+  } else if(url.includes('cloudinary.com') || url.includes('res.cloudinary')) {
+    // Cloudinary URL — fl_attachment trick se download karo
+    const dlUrl = url.replace('/upload/', '/upload/fl_attachment/');
+    const a = document.createElement('a');
+    a.href = dlUrl;
+    a.download = filename;
+    a.target = '_blank';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    toast('✅ Download shuru ho gayi!');
   } else {
+    // Doosre URLs — fetch try karo, fallback new tab
     fetch(url)
       .then(r => r.blob())
       .then(blob => {
@@ -2091,15 +2101,13 @@ function dlFromDetail(){
         document.body.appendChild(a); a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(burl);
-        toast('✅ "'+p.title+'" download ho gaya!');
-        // Try browser notification if permission granted
-        if(Notification && Notification.permission === 'granted'){
-          new Notification('ClickPin Download ✅', { body: '"'+p.title+'" successfully downloaded!', icon: '📌' });
-        }
+        toast('✅ Download ho gaya!');
       })
       .catch(()=>{
-        window.open(url,'_blank');
-        toast('📂 File new tab mein khul gayi — wahan se save karo');
+        const a = document.createElement('a');
+        a.href = url; a.target = '_blank'; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        toast('📂 File khul gayi — hold karke save karo');
       });
   }
 }
@@ -2269,7 +2277,7 @@ function switchUploadType(tp,btn){
 }
 // ── CLOUDINARY CONFIG ──
 const CLOUDINARY_CLOUD = 'dtmzr5eq7';
-const CLOUDINARY_PRESET = 'clickpin';
+const CLOUDINARY_PRESET = 'clickpin_unsigned';
 let upFile = null; // actual file object store karo
 
 function handleFileSelect(inp){
@@ -2296,7 +2304,7 @@ async function uploadToCloudinary(file) {
 
   const formData = new FormData();
   formData.append('file', uploadFile);
-  formData.append('upload_preset', 'clickpin');
+  formData.append('upload_preset', 'clickpin_unsigned');
   // Note: api_key mat bhejo — unsigned preset ke saath sirf upload_preset chahiye
 
   const CLOUD = 'dtmzr5eq7';
