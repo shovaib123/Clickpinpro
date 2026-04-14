@@ -1858,31 +1858,47 @@ function _realBuildGrid(list){
   list.forEach((p,i)=>{
     const imgH=160+(p.id%6)*35;
     let media='';
+
+    // ✅ Cloudinary video URL se thumbnail URL banao
+    function getCloudinaryThumb(url, w, h) {
+      if (!url || url.startsWith('data:')) return url;
+      if (url.includes('res.cloudinary.com') && (url.includes('/video/') || url.match(/\.(mp4|mov|webm)/i))) {
+        // Video URL se image thumbnail: /video/upload/ → /video/upload/so_0,w_W,h_H,c_fill/
+        return url
+          .replace('/upload/', `/upload/so_0,w_${w},h_${h},c_fill/`)
+          .replace(/\.(mp4|mov|webm)(\?.*)?$/i, '.jpg');
+      }
+      // Normal image URL
+      if (url.includes('?')) return url + `&w=${w}&h=${h}&auto=format&fit=crop`;
+      return url + `?w=${w}&h=${h}&auto=format&fit=crop`;
+    }
+
     if(p.type==='reel'){
-      const isB64 = p.src.startsWith('data:');
-      const thumbSrc = isB64 ? p.src : (p.src.includes('?') ? p.src+'&auto=format&fit=crop&w=400&h=711' : p.src+'?w=400&auto=format&fit=crop&h=711');
-      const vidSrc = p.vid || '';
-      media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:#f0f0f0">
-        <img class="reel-thumb" src="${thumbSrc}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block">
+      const isB64 = p.src && p.src.startsWith('data:');
+      // src Cloudinary video URL bhi ho sakta hai ya already thumbnail
+      const thumbSrc = isB64 ? p.src : getCloudinaryThumb(p.src, 400, 711);
+      const vidSrc = p.vid || p.src || '';
+      media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:#111">
+        <img class="reel-thumb" src="${thumbSrc}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none'">
         <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video>
         <div class="reel-badge">🎬 Reel</div>
         <div class="reel-dur">▶ 0:${String(15+p.id%45).padStart(2,'0')}</div>
         <div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div>
       </div>`;
     } else if(p.type==='video'){
-      const isB64 = p.src.startsWith('data:');
-      const vThumb = isB64 ? p.src : (p.src.includes('?') ? p.src+'&auto=format&fit=crop&h='+imgH : p.src+'?auto=format&fit=crop&h='+imgH);
+      const isB64 = p.src && p.src.startsWith('data:');
+      const vThumb = isB64 ? p.src : getCloudinaryThumb(p.src, 400, imgH);
       const vidSrc = p.vid || p.src;
-      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px">
+      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:#111">
         <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video>
-        <img class="vid-thumb" src="${vThumb}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy">
+        <img class="vid-thumb" src="${vThumb}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none'">
         <div class="video-badge">🎥 Video</div>
         <div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div>
       </div>`;
     } else {
-      const isB64 = p.src.startsWith('data:');
-      const imgSrc = isB64 ? p.src : (p.src.includes('?') ? p.src+'&auto=format&fit=crop&h='+imgH : p.src+'?auto=format&fit=crop&h='+imgH);
-      media=`<div class="pin-img-wrap"><img src="${imgSrc}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" loading="lazy" alt="${p.title}"></div>`;
+      const isB64 = p.src && p.src.startsWith('data:');
+      const imgSrc = isB64 ? p.src : (p.src && p.src.includes('?') ? p.src+'&auto=format&fit=crop&h='+imgH : (p.src||'')+'?auto=format&fit=crop&h='+imgH);
+      media=`<div class="pin-img-wrap"><img src="${imgSrc}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" loading="lazy" alt="${p.title}" onerror="this.style.background='#f0f0f0'"></div>`;
     }
     // Every 10th pin: sponsored card
     if(i>0 && i%10===0){
@@ -1897,6 +1913,7 @@ function _realBuildGrid(list){
       <div class="pin-overlay">
         <div class="overlay-top">
           <button class="save-btn${savedSet.has(p.id)?' saved':''}" onclick="tgSave(event,${p.id})">${savedSet.has(p.id)?'✔ Saved':'Save'}</button>
+          ${(p.firestoreUserId && myClickPinId) || p.user.name === myClickPinName ? `<button class="ov-btn" onclick="deletePin(event,${p.id})" title="Delete karo" style="background:rgba(230,0,35,.85);color:#fff">🗑️</button>` : ''}
         </div>
         <div class="overlay-bottom">
           ${p.type!=='image'?`<button class="ov-btn" onclick="openReels(event,${p.id})" title="Reels mein dekho">🎬</button>`:''}
@@ -2181,7 +2198,42 @@ function copyLink(){
 }
 function dlPin(e,id){e.stopPropagation();const p=PIN_DATA.find(x=>x.id===id);if(!p)return;const a=document.createElement('a');a.href=p.src;a.download=p.title.replace(/\s+/g,'_')+'.jpg';a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);toast('⬇️ Download shuru ho gaya!');}
 
-// ─── REELS FULLSCREEN ───
+// ── DELETE PIN ──
+async function deletePin(e, id) {
+  e.stopPropagation();
+  const p = PIN_DATA.find(x => x.id === id);
+  if (!p) return;
+
+  if (!confirm(`"${p.title}" ko delete karna chahte ho?`)) return;
+
+  // 1. PIN_DATA se hatao
+  const idx = PIN_DATA.findIndex(x => x.id === id);
+  if (idx > -1) PIN_DATA.splice(idx, 1);
+
+  // 2. localStorage se hatao
+  try {
+    const saved = JSON.parse(localStorage.getItem('cp_user_posts') || '[]');
+    const filtered = saved.filter(x => x.id !== id && x.firestoreId !== p.firestoreId);
+    localStorage.setItem('cp_user_posts', JSON.stringify(filtered));
+  } catch(le) {}
+
+  // 3. Firestore se hatao
+  if (db && p.firestoreId) {
+    try {
+      await db.collection('posts').doc(p.firestoreId).delete();
+      toast('🗑️ Post delete ho gayi!');
+    } catch(fe) {
+      toast('⚠️ Cloud se delete fail: ' + fe.message.substring(0,50));
+    }
+  } else {
+    toast('🗑️ Post delete ho gayi!');
+  }
+
+  // 4. UI update
+  applyFilters();
+  const pp = document.getElementById('profilePage');
+  if (pp && pp.classList.contains('open')) openUserProfile();
+}
 function openReels(e,startId){
   if(e&&e.stopPropagation)e.stopPropagation();
   const reels=PIN_DATA.filter(p=>p.type==='reel'||p.type==='video');
@@ -4641,6 +4693,9 @@ function initFirebase() {
   db = firebase.firestore();
   fbAuth = firebase.auth();
 
+  // ✅ PAGE LOAD PE SABKI POSTS LOAD KARO (login ke bina bhi)
+  setTimeout(() => loadAllPostsFromFirestore(), 1500);
+
   // Auth state listener — jab bhi login/logout ho
   fbAuth.onAuthStateChanged(async (user) => {
     if (user) {
@@ -4663,9 +4718,8 @@ function initFirebase() {
         // Saved posts load karo
         loadSavedFromFirestore(user.uid);
 
-        // ✅ USER KE POSTS FIRESTORE SE LOAD KARO
+        // Apni posts load karo (agar koi Firestore mein baaki reh gayi ho)
         loadUserPostsFromFirestore(user.uid, currentUser);
-        // Email se bhi try karo (purane posts ke liye)
         if (user.email) loadUserPostsFromFirestore(user.email, currentUser);
 
       } catch(e) {
@@ -4690,6 +4744,63 @@ async function loadSavedFromFirestore(uid) {
       applyFilters();
     }
   } catch(e) {}
+}
+
+// ✅ SABKI POSTS LOAD KARO — home feed ke liye
+async function loadAllPostsFromFirestore() {
+  if (!db) return;
+  try {
+    let snapshot;
+    try {
+      snapshot = await db.collection('posts')
+        .orderBy('createdAt', 'desc')
+        .limit(100)
+        .get();
+    } catch(e) {
+      // orderBy index nahi hai toh bina orderBy try karo
+      snapshot = await db.collection('posts').limit(100).get();
+    }
+
+    let added = 0;
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const srcUrl = data.src || data.imageUrl || '';
+      if (!srcUrl || srcUrl.startsWith('data:')) return;
+
+      const exists = PIN_DATA.some(p => p.firestoreId === doc.id);
+      if (!exists) {
+        const safeAvatar = (data.userAvatar && data.userAvatar.startsWith('http'))
+          ? data.userAvatar
+          : `https://i.pravatar.cc/60?img=${Math.floor(Math.random()*70)+1}`;
+
+        PIN_DATA.unshift({
+          id              : data.id || Date.now() + Math.random(),
+          firestoreId     : doc.id,
+          firestoreUserId : data.userId || '',
+          type            : data.type || 'image',
+          src             : srcUrl,
+          vid             : data.vid || null,
+          title           : data.title || 'Post',
+          desc            : data.desc || '',
+          cat             : data.cat || 'Ghar',
+          likes           : data.likes || 0,
+          user            : {
+            name     : data.userName || 'ClickPin User',
+            avatar   : safeAvatar,
+            followers: '0'
+          }
+        });
+        added++;
+      }
+    });
+
+    if (added > 0) {
+      console.log('✅ Firestore se sabki', added, 'posts load hui');
+      applyFilters();
+    }
+  } catch(e) {
+    console.error('All posts load fail:', e.message);
+  }
 }
 
 // ✅ USER KE POSTS FIRESTORE SE LOAD KARO — refresh pe bhi dikhein
