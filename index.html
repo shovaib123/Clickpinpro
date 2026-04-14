@@ -2377,10 +2377,10 @@ async function submitPin(){
   const currentId   = myClickPinId || '@user';
   const currentName = myClickPinName || (myClickPinId ? myClickPinId.replace('@','') : 'You');
   const savedAv     = localStorage.getItem('cp_avatar');
-  const avatarSeed  = Math.abs(currentId.split('').reduce((a,c)=>a+c.charCodeAt(c),0)) % 70 + 1;
+  const avatarSeed  = Math.abs(currentId.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % 70 + 1;
   const currentUser = {
     name    : currentName,
-    avatar  : savedAv || `https://i.pravatar.cc/60?img=${avatarSeed}`,
+    avatar  : (savedAv && !savedAv.startsWith('data:')) ? savedAv : `https://i.pravatar.cc/60?img=${avatarSeed}`,
     followers: '0'
   };
 
@@ -2458,49 +2458,69 @@ async function submitPin(){
 
   if (!isLocalFile && db && userId) {
     try {
-      // Base64 Firestore mein mat bhejo — bahut bada hoga
-      const srcToSave = finalSrc && finalSrc.startsWith('data:') ? '' : finalSrc;
-      const vidToSave = finalVid && finalVid.startsWith('data:') ? '' : finalVid;
+      // ✅ Base64 kabhi bhi Firestore mein mat bhejo — size limit exceed hoti hai
+      const srcToSave = (finalSrc && !finalSrc.startsWith('data:')) ? finalSrc : '';
+      const vidToSave = (finalVid && !finalVid.startsWith('data:')) ? finalVid : '';
 
-      const docRef = await db.collection('posts').add({
-        id        : np.id,
-        type      : np.type,
-        src       : srcToSave,
-        vid       : vidToSave || '',
-        title     : np.title,
-        desc      : np.desc,
-        cat       : np.cat,
-        likes     : 0,
-        userId    : userId,
-        userName  : currentUser.name,
-        userAvatar: currentUser.avatar || '',
-        createdAt : new Date().toISOString()
-      });
-      np.firestoreId     = docRef.id;
-      np.firestoreUserId = userId;
+      // ✅ userAvatar bhi base64 nahi hona chahiye Firestore mein
+      const avatarToSave = (currentUser.avatar && !currentUser.avatar.startsWith('data:'))
+        ? currentUser.avatar.substring(0, 300)  // max 300 chars
+        : `https://i.pravatar.cc/60?img=${avatarSeed}`;
 
-      // localStorage backup (Cloudinary URL wale posts)
-      if (srcToSave) {
+      // ✅ Agar Cloudinary URL nahi mila (src empty) toh Firestore mein mat save karo
+      if (!srcToSave) {
+        toast('⚠️ Image Cloudinary pe upload nahi hui — post locally dikh rahi hai.');
+        // Local mein dikh raha hai (PIN_DATA.unshift neeche hai) but Firestore skip
+      } else {
+        const docRef = await db.collection('posts').add({
+          id        : np.id,
+          type      : np.type,
+          src       : srcToSave,
+          vid       : vidToSave,
+          title     : np.title,
+          desc      : np.desc,
+          cat       : np.cat,
+          likes     : 0,
+          userId    : userId,
+          userName  : currentUser.name,
+          userAvatar: avatarToSave,
+          createdAt : new Date().toISOString()
+        });
+        np.firestoreId     = docRef.id;
+        np.firestoreUserId = userId;
+
+        // ✅ localStorage backup — refresh pe bhi dikhe
         try {
           const saved = JSON.parse(localStorage.getItem('cp_user_posts') || '[]');
-          saved.unshift({ id: np.id, firestoreId: docRef.id, type: np.type, src: srcToSave, vid: vidToSave||'', title: np.title, desc: np.desc, cat: np.cat, likes:0, userId, userName: currentUser.name, userAvatar: currentUser.avatar||'', createdAt: new Date().toISOString() });
-          localStorage.setItem('cp_user_posts', JSON.stringify(saved.slice(0,50)));
-        } catch(le){}
+          saved.unshift({
+            id: np.id, firestoreId: docRef.id, type: np.type,
+            src: srcToSave, vid: vidToSave,
+            title: np.title, desc: np.desc, cat: np.cat, likes: 0,
+            userId, userName: currentUser.name, userAvatar: avatarToSave,
+            createdAt: new Date().toISOString()
+          });
+          localStorage.setItem('cp_user_posts', JSON.stringify(saved.slice(0, 50)));
+        } catch(le) {}
+
+        toast('🎉 Post publish ho gayi! Refresh pe bhi dikhegi ✅');
       }
-      toast('🎉 Post publish ho gayi! Refresh pe bhi dikhegi ✅');
     } catch(e) {
       console.error('Firestore save fail:', e);
-      toast('⚠️ Cloud save fail: ' + e.message);
+      toast('⚠️ Cloud save fail: ' + e.message.substring(0, 80));
     }
   } else {
     // Local only save
     try {
-      const saved = JSON.parse(localStorage.getItem('cp_user_posts') || '[]');
-      saved.unshift({ id: np.id, type: np.type, src: finalSrc && !finalSrc.startsWith('data:') ? finalSrc : '', vid: finalVid && !finalVid.startsWith('data:') ? finalVid : '', title: np.title, desc: np.desc, cat: np.cat, likes:0, createdAt: new Date().toISOString() });
-      localStorage.setItem('cp_user_posts', JSON.stringify(saved.slice(0,50)));
-    } catch(le){}
+      const srcLocal = (finalSrc && !finalSrc.startsWith('data:')) ? finalSrc : '';
+      const vidLocal = (finalVid && !finalVid.startsWith('data:')) ? finalVid : '';
+      if (srcLocal) {
+        const saved = JSON.parse(localStorage.getItem('cp_user_posts') || '[]');
+        saved.unshift({ id: np.id, type: np.type, src: srcLocal, vid: vidLocal, title: np.title, desc: np.desc, cat: np.cat, likes: 0, createdAt: new Date().toISOString() });
+        localStorage.setItem('cp_user_posts', JSON.stringify(saved.slice(0, 50)));
+      }
+    } catch(le) {}
     if (isLocalFile) {
-      toast('🎉 Post abhi ke liye dikh rahi hai! Vercel pe deploy karo cloud save ke liye.');
+      toast('🎉 Post dikh rahi hai! Vercel pe deploy karo — tab refresh pe bhi rahegi.');
     } else {
       toast('🎉 Post dikh rahi hai! (Login se cloud bhi save hoga)');
     }
@@ -4018,11 +4038,24 @@ buildCatBar();
 try {
   const savedPosts = JSON.parse(localStorage.getItem('cp_user_posts') || '[]');
   if (savedPosts.length > 0) {
+    let loadedCount = 0;
     savedPosts.forEach(p => {
-      // Sirf Cloudinary URLs wale posts add karo — duplicate check
-      const srcOk = p.src && (p.src.includes('cloudinary') || p.src.includes('res.cloudinary'));
-      const notExists = !PIN_DATA.some(x => x.id === p.id || x.firestoreId === p.firestoreId);
+      // ✅ Sirf valid Cloudinary URLs — base64 ya empty skip karo
+      const srcOk = p.src
+        && !p.src.startsWith('data:')
+        && p.src.startsWith('http');
+      const notExists = !PIN_DATA.some(x =>
+        x.id === p.id ||
+        (p.firestoreId && x.firestoreId === p.firestoreId)
+      );
       if (srcOk && notExists) {
+        // ✅ avatar bhi base64 nahi hona chahiye
+        const safeAvatar = (p.userAvatar && !p.userAvatar.startsWith('data:') && p.userAvatar.startsWith('http'))
+          ? p.userAvatar
+          : (localStorage.getItem('cp_avatar') && !localStorage.getItem('cp_avatar').startsWith('data:')
+              ? localStorage.getItem('cp_avatar')
+              : `https://i.pravatar.cc/60?img=1`);
+
         PIN_DATA.unshift({
           id             : p.id,
           firestoreId    : p.firestoreId || '',
@@ -4036,13 +4069,14 @@ try {
           likes          : p.likes || 0,
           user           : {
             name    : p.userName || myClickPinName || 'You',
-            avatar  : p.userAvatar || localStorage.getItem('cp_avatar') || `https://i.pravatar.cc/60?img=1`,
+            avatar  : safeAvatar,
             followers: '0'
           }
         });
+        loadedCount++;
       }
     });
-    console.log('✅ localStorage se', savedPosts.length, 'posts load hue');
+    if (loadedCount > 0) console.log('✅ localStorage se', loadedCount, 'posts load hue');
   }
 } catch(e) { console.log('localStorage posts load error:', e); }
 
@@ -4685,7 +4719,9 @@ async function loadUserPostsFromFirestore(uid, currentUser) {
           likes           : data.likes || 0,
           user            : {
             name     : data.userName || currentUser.name,
-            avatar   : data.userAvatar || localStorage.getItem('cp_avatar') || `https://i.pravatar.cc/60?img=1`,
+            avatar   : (data.userAvatar && !data.userAvatar.startsWith('data:') && data.userAvatar.startsWith('http'))
+              ? data.userAvatar
+              : `https://i.pravatar.cc/60?img=1`,
             followers: '0'
           }
         });
