@@ -1536,7 +1536,8 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
       <div class="detail-user">
         <img id="detailUserImg" src="" alt="">
         <div><strong id="detailUserName"></strong><small id="detailUserFol"></small></div>
-        <button class="follow-btn" id="followBtn" onclick="this.classList.toggle('on');toast(this.classList.contains('on')?'✅ Following!':'Unfollow ho gaya')">Follow</button>
+        <button class="follow-btn" id="followBtn" onclick="handleFollow(this)">Follow</button>
+        <button id="bellBtn" title="Notifications" onclick="toggleBellNotif(this)" style="background:none;border:1.5px solid var(--border);border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer;transition:all .2s;display:none">🔔</button>
       </div>
       <div class="detail-title" id="detailTitle"></div>
       <div class="detail-desc" id="detailDesc"></div>
@@ -1861,12 +1862,13 @@ function _realBuildGrid(list){
 
     // ✅ Cloudinary video URL se thumbnail URL banao
     function getCloudinaryThumb(url, w, h) {
-      if (!url || url.startsWith('data:')) return url;
-      if (url.includes('res.cloudinary.com') && (url.includes('/video/') || url.match(/\.(mp4|mov|webm)/i))) {
-        // Video URL se image thumbnail: /video/upload/ → /video/upload/so_0,w_W,h_H,c_fill/
+      if (!url || url.startsWith('data:')) return '';
+      // Cloudinary video URL → thumbnail image
+      if (url.includes('res.cloudinary.com') &&
+          (url.includes('/video/') || url.match(/\.(mp4|mov|webm|avi)/i))) {
         return url
-          .replace('/upload/', `/upload/so_0,w_${w},h_${h},c_fill/`)
-          .replace(/\.(mp4|mov|webm)(\?.*)?$/i, '.jpg');
+          .replace('/upload/', `/upload/so_0,w_${w},h_${h},c_fill,q_auto/`)
+          .replace(/\.(mp4|mov|webm|avi)(\?.*)?$/i, '.jpg');
       }
       // Normal image URL
       if (url.includes('?')) return url + `&w=${w}&h=${h}&auto=format&fit=crop`;
@@ -1875,11 +1877,12 @@ function _realBuildGrid(list){
 
     if(p.type==='reel'){
       const isB64 = p.src && p.src.startsWith('data:');
-      // src Cloudinary video URL bhi ho sakta hai ya already thumbnail
-      const thumbSrc = isB64 ? p.src : getCloudinaryThumb(p.src, 400, 711);
+      // src video URL bhi ho sakta hai — dono cases handle karo
+      const rawThumbUrl = p.src || p.vid || '';
+      const thumbSrc = isB64 ? p.src : getCloudinaryThumb(rawThumbUrl, 400, 711);
       const vidSrc = p.vid || p.src || '';
-      media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:#111">
-        <img class="reel-thumb" src="${thumbSrc}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none'">
+      media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">
+        ${thumbSrc ? `<img class="reel-thumb" src="${thumbSrc}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none'">` : ''}
         <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video>
         <div class="reel-badge">🎬 Reel</div>
         <div class="reel-dur">▶ 0:${String(15+p.id%45).padStart(2,'0')}</div>
@@ -1887,11 +1890,12 @@ function _realBuildGrid(list){
       </div>`;
     } else if(p.type==='video'){
       const isB64 = p.src && p.src.startsWith('data:');
-      const vThumb = isB64 ? p.src : getCloudinaryThumb(p.src, 400, imgH);
+      const rawThumbUrl = p.src || p.vid || '';
+      const vThumb = isB64 ? p.src : getCloudinaryThumb(rawThumbUrl, 400, imgH);
       const vidSrc = p.vid || p.src;
-      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:#111">
+      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)">
         <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video>
-        <img class="vid-thumb" src="${vThumb}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none'">
+        ${vThumb ? `<img class="vid-thumb" src="${vThumb}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none'">` : ''}
         <div class="video-badge">🎥 Video</div>
         <div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div>
       </div>`;
@@ -1913,7 +1917,7 @@ function _realBuildGrid(list){
       <div class="pin-overlay">
         <div class="overlay-top">
           <button class="save-btn${savedSet.has(p.id)?' saved':''}" onclick="tgSave(event,${p.id})">${savedSet.has(p.id)?'✔ Saved':'Save'}</button>
-          ${(p.firestoreUserId && myClickPinId) || p.user.name === myClickPinName ? `<button class="ov-btn" onclick="deletePin(event,${p.id})" title="Delete karo" style="background:rgba(230,0,35,.85);color:#fff">🗑️</button>` : ''}
+          ${(p.user && p.user.name && myClickPinName && p.user.name.toLowerCase() === myClickPinName.toLowerCase()) ? `<button class="ov-btn" onclick="deletePin(event,${p.id})" title="Delete" style="background:rgba(220,38,38,.9);color:#fff;font-size:16px">🗑️</button>` : ''}
         </div>
         <div class="overlay-bottom">
           ${p.type!=='image'?`<button class="ov-btn" onclick="openReels(event,${p.id})" title="Reels mein dekho">🎬</button>`:''}
@@ -1988,10 +1992,31 @@ function openDetail(id){
   document.getElementById('detailDesc').textContent=p.desc;
   if(document.getElementById('detailUserImg'))document.getElementById('detailUserImg').src=p.user.avatar;
   document.getElementById('detailUserName').textContent=p.user.name;
-  document.getElementById('detailUserFol').textContent=p.user.followers+' followers';
+  document.getElementById('detailUserFol').textContent=(p.user.followers||'0')+' followers';
   const sb=document.getElementById('detailSaveBtn');
   sb.textContent=savedSet.has(id)?'✔ Saved':'Save';sb.className='detail-save'+(savedSet.has(id)?' saved':'');
-  document.getElementById('followBtn').classList.remove('on');document.getElementById('followBtn').textContent='Follow';
+
+  // ✅ Follow state restore
+  const followBtn = document.getElementById('followBtn');
+  const bellBtn = document.getElementById('bellBtn');
+  const follows = JSON.parse(localStorage.getItem('cp_follows') || '[]');
+  const isFollowing = follows.includes(p.user.name);
+  if (followBtn) {
+    followBtn.classList.toggle('on', isFollowing);
+    followBtn.textContent = isFollowing ? 'Following' : 'Follow';
+    // Apni post pe Follow mat dikhao
+    if (p.user.name === myClickPinName) {
+      followBtn.style.display = 'none';
+      if (bellBtn) bellBtn.style.display = 'none';
+    } else {
+      followBtn.style.display = '';
+      if (bellBtn) {
+        bellBtn.style.display = isFollowing ? 'flex' : 'none';
+        bellBtn.style.alignItems = 'center';
+        bellBtn.style.justifyContent = 'center';
+      }
+    }
+  }
   // Creator profile section
   const profileArea=document.getElementById('creatorProfileArea');
   if(profileArea){
@@ -2156,16 +2181,17 @@ function closeShare(){document.getElementById('shareModal').classList.remove('op
 function shareTo(pl){
   if(!sharePin) return;
   closeShare();
-  // Use actual media URL for sharing
-  const mediaUrl = ((sharePin.type==='video'||sharePin.type==='reel') && sharePin.vid && !sharePin.vid.startsWith('data:'))
-    ? sharePin.vid
-    : (sharePin.src.startsWith('data:') ? location.href : sharePin.src);
-  const shareText = '📌 '+sharePin.title+' | ClickPin India\n\n'+sharePin.desc;
+  // ✅ App URL share karo — Cloudinary URL nahi
+  const appUrl = location.origin + location.pathname + '?pin=' + sharePin.id;
+  const thumbUrl = (sharePin.src && !sharePin.src.startsWith('data:') && !sharePin.src.match(/\.(mp4|mov|webm)/i))
+    ? sharePin.src
+    : (sharePin.vid ? sharePin.vid.replace('/upload/','/upload/so_0,w_600,h_400,c_fill/').replace(/\.(mp4|mov|webm)/i,'.jpg') : appUrl);
+  const shareText = `📌 ${sharePin.title} | ClickPin India\n${sharePin.desc || ''}\n\n${appUrl}`;
   const tt = encodeURIComponent(shareText);
-  const mu = encodeURIComponent(mediaUrl);
+  const mu = encodeURIComponent(appUrl);
 
   const urls = {
-    whatsapp: `https://wa.me/?text=${tt}%0A%0A${mu}`,
+    whatsapp: `https://wa.me/?text=${tt}`,
     telegram: `https://t.me/share/url?url=${mu}&text=${encodeURIComponent('📌 '+sharePin.title+' | ClickPin India')}`,
     facebook: `https://www.facebook.com/sharer/sharer.php?u=${mu}&quote=${encodeURIComponent(sharePin.title)}`,
     instagram: `https://www.instagram.com/`,
@@ -2197,6 +2223,60 @@ function copyLink(){
   closeShare();
 }
 function dlPin(e,id){e.stopPropagation();const p=PIN_DATA.find(x=>x.id===id);if(!p)return;const a=document.createElement('a');a.href=p.src;a.download=p.title.replace(/\s+/g,'_')+'.jpg';a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);toast('⬇️ Download shuru ho gaya!');}
+
+// ── FOLLOW + BELL ──
+function handleFollow(btn) {
+  const isNowFollowing = !btn.classList.contains('on');
+  btn.classList.toggle('on');
+  btn.textContent = isNowFollowing ? 'Following' : 'Follow';
+  const bellBtn = document.getElementById('bellBtn');
+  if (bellBtn) {
+    bellBtn.style.display = isNowFollowing ? 'flex' : 'none';
+    bellBtn.style.alignItems = 'center';
+    bellBtn.style.justifyContent = 'center';
+  }
+  if (isNowFollowing) {
+    toast('✅ Following! 🔔 Notifications on');
+    const p = PIN_DATA.find(x => x.id === openPinId);
+    if (p) {
+      let follows = JSON.parse(localStorage.getItem('cp_follows') || '[]');
+      if (!follows.includes(p.user.name)) { follows.push(p.user.name); localStorage.setItem('cp_follows', JSON.stringify(follows)); }
+    }
+    saveFollowNotification();
+  } else {
+    toast('Unfollow ho gaya');
+    const p = PIN_DATA.find(x => x.id === openPinId);
+    if (p) {
+      let follows = JSON.parse(localStorage.getItem('cp_follows') || '[]');
+      localStorage.setItem('cp_follows', JSON.stringify(follows.filter(x => x !== p.user.name)));
+    }
+  }
+}
+
+function toggleBellNotif(btn) {
+  const isOn = btn.textContent === '🔔';
+  btn.textContent = isOn ? '🔕' : '🔔';
+  btn.style.background = isOn ? '#f0f0f0' : 'none';
+  toast(isOn ? '🔕 Notifications off' : '🔔 Notifications on');
+}
+
+async function saveFollowNotification() {
+  if (!db) return;
+  const p = PIN_DATA.find(x => x.id === openPinId);
+  if (!p || !p.firestoreUserId) return;
+  try {
+    await db.collection('notifications').add({
+      toUserId  : p.firestoreUserId,
+      fromName  : myClickPinName || 'Someone',
+      fromAvatar: (localStorage.getItem('cp_avatar') && localStorage.getItem('cp_avatar').startsWith('http')) ? localStorage.getItem('cp_avatar') : '',
+      type      : 'follow',
+      text      : (myClickPinName || 'Kisi ne') + ' aapko follow kiya! 🎉',
+      createdAt : new Date().toISOString(),
+      read      : false
+    });
+    console.log('✅ Follow notification save hua');
+  } catch(e) { console.log('Notification save fail:', e.message); }
+}
 
 // ── DELETE PIN ──
 async function deletePin(e, id) {
@@ -3429,6 +3509,8 @@ function openInbox() {
   renderInboxTab(inboxTab);
   document.getElementById('inboxPage').classList.add('open');
   document.getElementById('inboxDot').style.display = 'none';
+  // ✅ Firestore se real notifications load karo
+  loadNotificationsFromFirestore();
 }
 function closeInbox() {
   document.getElementById('inboxPage').classList.remove('open');
@@ -3438,6 +3520,94 @@ function markAllRead() {
   INBOX_DATA.req.forEach(n => n.unread = false);
   renderInboxTab(inboxTab);
   toast('✅ Sab read mark ho gaya');
+}
+
+// ✅ Firestore se notifications load karo
+async function loadNotificationsFromFirestore() {
+  if (!db || !fbAuth || !fbAuth.currentUser) return;
+  try {
+    const snap = await db.collection('notifications')
+      .where('toUserId', '==', fbAuth.currentUser.uid)
+      .orderBy('createdAt', 'desc')
+      .limit(20)
+      .get();
+
+    if (snap.empty) return;
+    let newNotifs = [];
+    snap.forEach(doc => {
+      const d = doc.data();
+      // Duplicate check
+      if (!INBOX_DATA.notif.some(n => n.firestoreId === doc.id)) {
+        newNotifs.push({
+          id         : doc.id,
+          firestoreId: doc.id,
+          type       : d.type || 'follow',
+          text       : d.text || 'Naya notification',
+          time       : timeSince(d.createdAt),
+          unread     : !d.read,
+          av         : d.fromAvatar || ''
+        });
+      }
+    });
+
+    if (newNotifs.length > 0) {
+      INBOX_DATA.notif = [...newNotifs, ...INBOX_DATA.notif];
+      renderInboxTab(inboxTab);
+      // Dot show karo agar unread hai
+      if (newNotifs.some(n => n.unread)) {
+        const dot = document.getElementById('inboxDot');
+        if (dot) dot.style.display = 'block';
+      }
+    }
+  } catch(e) {
+    console.log('Notifications load fail:', e.message);
+    // orderBy index nahi hai toh bina orderBy try karo
+    try {
+      const snap2 = await db.collection('notifications')
+        .where('toUserId', '==', fbAuth.currentUser.uid)
+        .limit(20).get();
+      snap2.forEach(doc => {
+        const d = doc.data();
+        if (!INBOX_DATA.notif.some(n => n.firestoreId === doc.id)) {
+          INBOX_DATA.notif.unshift({
+            id: doc.id, firestoreId: doc.id,
+            type: d.type || 'follow',
+            text: d.text || 'Naya notification',
+            time: timeSince(d.createdAt),
+            unread: !d.read, av: d.fromAvatar || ''
+          });
+        }
+      });
+      renderInboxTab(inboxTab);
+    } catch(e2) {}
+  }
+}
+
+function timeSince(isoStr) {
+  if (!isoStr) return 'Abhi';
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'Abhi';
+  if (m < 60) return m + ' min pehle';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + ' ghante pehle';
+  return Math.floor(h / 24) + ' din pehle';
+}
+
+// ✅ Background mein unread notifications check karo
+async function checkNewNotifications(uid) {
+  if (!db || !uid) return;
+  try {
+    const snap = await db.collection('notifications')
+      .where('toUserId', '==', uid)
+      .where('read', '==', false)
+      .limit(5).get();
+    if (!snap.empty) {
+      const dot = document.getElementById('inboxDot');
+      if (dot) { dot.style.display = 'block'; }
+      toast('🔔 ' + snap.size + ' naya notification!');
+    }
+  } catch(e) {}
 }
 function switchInboxTab(tab, btn) {
   inboxTab = tab;
@@ -3449,8 +3619,8 @@ function renderInboxTab(tab) {
   const el = document.getElementById('inboxContent');
   if (tab === 'notif') {
     el.innerHTML = INBOX_DATA.notif.map(n => `
-      <div class="notif-item ${n.unread ? 'unread' : ''}" onclick="INBOX_DATA.notif.find(x=>x.id===${n.id}).unread=false;this.classList.remove('unread')">
-        <div class="notif-av-ic" style="background:rgba(230,0,35,.1)">${NOTIF_ICONS[n.type] || '🔔'}</div>
+      <div class="notif-item ${n.unread ? 'unread' : ''}" onclick="INBOX_DATA.notif.find(x=>x.id==='${n.id}'||x.id===${n.id}).unread=false;this.classList.remove('unread')">
+        ${n.av ? `<img class="notif-av" src="${n.av}" alt="" style="width:44px;height:44px;border-radius:50%;object-fit:cover;flex-shrink:0">` : `<div class="notif-av-ic" style="background:rgba(230,0,35,.1)">${NOTIF_ICONS[n.type] || '🔔'}</div>`}
         <div class="notif-body">
           <div class="notif-text">${n.text}</div>
           <div class="notif-time">${n.time}</div>
@@ -3459,7 +3629,7 @@ function renderInboxTab(tab) {
             <button class="notif-btn decline" onclick="event.stopPropagation();toast('Request decline ho gaya');this.closest('.notif-item').style.opacity='.5'">✕ Decline</button>
           </div>` : ''}
         </div>
-        ${n.thumb ? `<img class="notif-thumb" src="${n.thumb}&auto=format" alt="">` : ''}
+        ${n.thumb ? `<img class="notif-thumb" src="${n.thumb}" alt="">` : ''}
       </div>`).join('') || '<div class="empty-tab"><span class="empty-tab-ic">🔔</span><p>Koi notification nahi</p></div>';
   } else if (tab === 'msgs') {
     el.innerHTML = INBOX_DATA.msgs.map(m => `
@@ -3506,10 +3676,12 @@ function updateNavAvatar() {
   const avatarSeed = Math.abs(id.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % 70 + 1;
   const btn = document.getElementById('avatarBtn');
   if (!btn) return;
-  if (savedAv) {
-    btn.innerHTML = `<img src="${savedAv}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`;
+  // ✅ base64 nahi, sirf http URLs
+  const validAv = savedAv && savedAv.startsWith('http') ? savedAv : null;
+  if (validAv) {
+    btn.innerHTML = `<img src="${validAv}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`;
   } else {
-    btn.textContent = name[0] ? name[0].toUpperCase() : 'P';
+    btn.textContent = name[0] ? name[0].toUpperCase() : 'U';
   }
 }
 
@@ -3793,14 +3965,34 @@ function closeEditProfileModal() {
 }
 
 // Avatar file preview
-function previewAvatar(input) {
+async function previewAvatar(input) {
   const file = input.files[0];
   if (!file) return;
+
+  // Local preview
   const reader = new FileReader();
   reader.onload = e => {
     document.getElementById('epAvPreview').src = e.target.result;
   };
   reader.readAsDataURL(file);
+
+  // ✅ Cloudinary pe upload karo
+  toast('📤 Profile photo upload ho rahi hai...');
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', CLOUDINARY_PRESET);
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, { method:'POST', body: formData });
+    const data = await res.json();
+    if (data.secure_url) {
+      document.getElementById('epAvPreview').src = data.secure_url;
+      localStorage.setItem('cp_avatar', data.secure_url);
+      updateNavAvatar();
+      toast('✅ Profile photo ready!');
+    }
+  } catch(e) {
+    toast('⚠️ Photo upload fail — local mein save ho gayi');
+  }
 }
 
 function saveEditProfile() {
@@ -3833,10 +4025,19 @@ function saveEditProfile() {
     }
   }
 
-  // Save avatar if changed
-  const avSrc = document.getElementById('epAvPreview').src;
-  if (avSrc && !avSrc.includes('pravatar.cc')) {
+  // ✅ Avatar save - sirf http URLs, base64 nahi
+  const avEl = document.getElementById('epAvPreview');
+  const avSrc = avEl ? avEl.src : '';
+  if (avSrc && avSrc.startsWith('http') && !avSrc.includes('pravatar.cc')) {
     localStorage.setItem('cp_avatar', avSrc);
+    // Firestore mein bhi save karo
+    if (db && fbAuth && fbAuth.currentUser) {
+      db.collection('users').doc(fbAuth.currentUser.uid).set({
+        name: myClickPinName, cpid: myClickPinId,
+        bio: localStorage.getItem('cp_bio') || '',
+        avatar: avSrc
+      }, { merge: true }).catch(()=>{});
+    }
   }
 
   closeEditProfileModal();
@@ -4721,6 +4922,9 @@ function initFirebase() {
         // Apni posts load karo (agar koi Firestore mein baaki reh gayi ho)
         loadUserPostsFromFirestore(user.uid, currentUser);
         if (user.email) loadUserPostsFromFirestore(user.email, currentUser);
+
+        // ✅ Notifications check karo
+        setTimeout(() => checkNewNotifications(user.uid), 3000);
 
       } catch(e) {
         console.log('Firestore error:', e);
