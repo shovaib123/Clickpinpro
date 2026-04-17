@@ -544,8 +544,8 @@ tbody tr:last-child td{border-bottom:none}tbody tr:hover td{background:rgba(255,
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-top: 1px solid rgba(0,0,0,.08);
-  padding: 6px 0 calc(6px + env(safe-area-inset-bottom, 0px));
-  box-shadow: 0 -4px 20px rgba(0,0,0,.06);
+  padding: 3px 0 calc(3px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -2px 12px rgba(0,0,0,.05);
 }
 .bn-inner {
   display: flex;
@@ -554,50 +554,49 @@ tbody tr:last-child td{border-bottom:none}tbody tr:hover td{background:rgba(255,
   max-width: 700px;
   margin: 0 auto;
   width: 100%;
-  padding: 0 8px;
+  padding: 0 4px;
 }
 .bn-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 1px;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 6px 14px;
+  padding: 4px 10px;
   color: #999;
   transition: all .2s;
-  border-radius: 14px;
+  border-radius: 12px;
   flex: 1;
-  max-width: 80px;
+  max-width: 72px;
 }
-.bn-btn:hover { color: var(--dark); background: #f5f5f5; transform: translateY(-2px); }
+.bn-btn:hover { color: var(--dark); background: #f5f5f5; }
 .bn-btn.active { color: var(--red); }
-.bn-ic { font-size: 22px; line-height: 1.2; }
-.bn-lbl { font-size: 10px; font-weight: 700; letter-spacing: .2px; }
+.bn-ic { font-size: 20px; line-height: 1.1; }
+.bn-lbl { font-size: 9px; font-weight: 700; letter-spacing: .2px; }
 /* Upload button - special style */
 .bn-upload-btn {
   background: var(--red) !important;
   color: #fff !important;
-  border-radius: 18px !important;
-  padding: 8px 14px !important;
-  box-shadow: 0 4px 14px rgba(230,0,35,.35);
-  transform: translateY(-8px);
-  border: 3px solid #fff !important;
+  border-radius: 16px !important;
+  padding: 6px 12px !important;
+  box-shadow: 0 3px 12px rgba(230,0,35,.35);
+  transform: translateY(-6px);
+  border: 2px solid #fff !important;
 }
 .bn-upload-btn:hover {
   background: #c9001e !important;
-  transform: translateY(-10px) !important;
-  box-shadow: 0 6px 18px rgba(230,0,35,.45) !important;
+  transform: translateY(-8px) !important;
 }
-.bn-upload-btn .bn-ic { font-size: 24px; }
-.bn-upload-btn .bn-lbl { color: #fff !important; }
+.bn-upload-btn .bn-ic { font-size: 22px; }
+.bn-upload-btn .bn-lbl { color: #fff !important; font-size: 9px; }
 /* Laptop: slightly bigger */
 @media(min-width:768px) {
   .bn-inner { max-width: 800px; }
-  .bn-btn { padding: 8px 20px; max-width: 100px; }
-  .bn-ic { font-size: 24px; }
-  .bn-lbl { font-size: 11px; }
+  .bn-btn { padding: 6px 18px; max-width: 100px; }
+  .bn-ic { font-size: 22px; }
+  .bn-lbl { font-size: 10px; }
 }
 
 /* Main content above bottom nav */
@@ -1527,11 +1526,12 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
       <button class="det-close-btn" onclick="closeDetail()">✕</button>
       <div class="detail-actions">
         <button class="detail-save" id="detailSaveBtn" onclick="toggleDetailSave()">🔖 Save</button>
+        <button class="detail-download-btn" id="detailLikeBtn" onclick="likePost()" style="background:#fff0f1;border:1px solid #ffcdd2;color:#e53935">❤️ <span id="detailLikeCount">0</span></button>
         <button class="detail-share" onclick="openShareFromDetail()">📤 Share</button>
         <button class="detail-download-btn" onclick="dlFromDetail()">⬇️ Download</button>
         <button class="detail-download-btn" onclick="saveToBoard(openPinId)" style="background:#fef9c3;border:1px solid #fde68a;color:#92400e">📂 Collection</button>
         <button class="detail-download-btn" onclick="openNoteModal(new Event('x'),openPinId)" style="background:#f0f8ff;border:1px solid #dbeafe;color:#1e40af">📝 Note</button>
-        <button class="detail-download-btn" onclick="openComments(openPinId)" style="background:#f0fff4;border:1px solid #bbf7d0;color:#15803d">💬 Comments</button>
+        <button class="detail-download-btn" onclick="openComments(openPinId)" style="background:#f0fff4;border:1px solid #bbf7d0;color:#15803d">💬 <span id="detailCommentCount">0</span></button>
       </div>
       <div class="detail-user">
         <img id="detailUserImg" src="" alt="">
@@ -1838,9 +1838,41 @@ if('serviceWorker' in navigator){
   navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});
 }
 
+// ─── MOBILE BACK BUTTON (Android) ───
+function pushHistory(state) {
+  history.pushState(state, '', location.pathname + (state ? '?v=' + state : ''));
+}
+
+window.addEventListener('popstate', (e) => {
+  // Koi modal ya page open hai toh pehle wahi band karo
+  if (document.getElementById('reelsView').classList.contains('open')) { closeReels(); return; }
+  if (document.getElementById('detailModal').classList.contains('open')) { closeDetail(); return; }
+  if (document.getElementById('profilePage').classList.contains('open')) { closeUserProfile(); setBn('home'); return; }
+  if (document.getElementById('settingsPage').classList.contains('open')) { closeSettings(); return; }
+  if (document.getElementById('inboxPage').classList.contains('open')) { closeInbox(); setBn('home'); return; }
+  if (document.getElementById('boardsPage').classList.contains('open')) { closeBoards(); return; }
+  if (document.getElementById('boardDetailPage').classList.contains('open')) { closeBoardDetail(); return; }
+  if (document.getElementById('shareModal').classList.contains('open')) { closeShare(); return; }
+  if (document.getElementById('commentsDrawer').classList.contains('open')) { closeComments(); return; }
+  if (document.getElementById('uploadModal').classList.contains('open')) { closeUpload(); return; }
+  if (document.getElementById('createSheetOverlay').classList.contains('open')) { closeCreateSheet(); return; }
+  // Koi bhi open nahi — home pe aao
+  showHome();
+});
+
+// Koi page/modal open hone pe history push karo
+const _origOpenDetail = openDetail;
+function openDetail(id) { pushHistory('detail_' + id); _origOpenDetail(id); }
+const _origOpenReels = openReels;
+function openReels(e, startId) { pushHistory('reels'); _origOpenReels(e, startId); }
+const _origOpenUserProfile = openUserProfile;
+function openUserProfile() { pushHistory('profile'); _origOpenUserProfile(); }
+const _origOpenInbox = openInbox;
+function openInbox() { pushHistory('inbox'); _origOpenInbox(); }
+
 // ─── CATEGORIES ───
 function buildCatBar(){
-  const icons={All:'🏠',Ghar:'🏡',Fashion:'👗',Khana:'🍛',Travel:'✈️',Art:'🎨',Fitness:'💪',Technology:'💻',Nature:'🌿',DIY:'🛠️',Beauty:'💄',Weddings:'💒',Islamic:'☪️',Hindu:'🕉️',Christian:'✝️',Buddhist:'☸️',Sikh:'🪯',Jain:'🤲',Comedy:'😂',Sad:'😢',Quotes:'💬'};
+  const icons={All:'🏠',Ghar:'🏠',Fashion:'👗',Khana:'🍽️',Travel:'✈️',Art:'🎨',Fitness:'💪',Technology:'💻',Nature:'🌿',DIY:'🛠️',Beauty:'💄',Weddings:'💒',Islamic:'☪️',Hindu:'🕉️',Christian:'✝️',Buddhist:'☸️',Sikh:'🪯',Jain:'🤲',Comedy:'😂',Sad:'😢',Quotes:'💬'};
   document.getElementById('catBar').innerHTML=CATS.map(c=>`<button class="cat-pill${c===aCat?' active':''}" onclick="filterCat('${c}')">${icons[c]||''} ${c}</button>`).join('');
 }
 function filterCat(c){
@@ -2051,6 +2083,73 @@ function openDetail(id){
         </div>
       </div>`;
     }).join('');
+  }
+  // ✅ Like count update
+  const likeEl = document.getElementById('detailLikeCount');
+  if (likeEl) likeEl.textContent = p.likes >= 1000 ? (p.likes/1000).toFixed(1)+'k' : p.likes;
+
+  // ✅ Comment count
+  const cmtEl = document.getElementById('detailCommentCount');
+  if (cmtEl) {
+    const stored = commentsDB[id] || [];
+    cmtEl.textContent = stored.length > 0 ? stored.length : '';
+  }
+
+  // ✅ Followers - Firestore se load karo
+  loadFollowersCount(p);
+}
+
+// ✅ Followers count Firestore se load karo
+async function loadFollowersCount(p) {
+  if (!db || !p.firestoreUserId) {
+    document.getElementById('detailUserFol').textContent = (p.user.followers || '0') + ' followers';
+    return;
+  }
+  try {
+    const snap = await db.collection('notifications')
+      .where('toUserId', '==', p.firestoreUserId)
+      .where('type', '==', 'follow')
+      .get();
+    const count = snap.size;
+    document.getElementById('detailUserFol').textContent = count + ' followers';
+    // Profile page pe bhi update karo
+    const pfEl = document.getElementById('pstat-followers');
+    if (pfEl && p.firestoreUserId === ((fbAuth&&fbAuth.currentUser) ? fbAuth.currentUser.uid : '')) {
+      pfEl.textContent = count;
+      localStorage.setItem('cp_followers', count);
+    }
+  } catch(e) {
+    document.getElementById('detailUserFol').textContent = (p.user.followers || '0') + ' followers';
+  }
+}
+
+// ✅ Like Post
+function likePost() {
+  const p = PIN_DATA.find(x => x.id === openPinId);
+  if (!p) return;
+  const btn = document.getElementById('detailLikeBtn');
+  if (!btn) return;
+  if (btn.classList.contains('liked')) {
+    p.likes = Math.max(0, p.likes - 1);
+    btn.classList.remove('liked');
+    btn.style.background = '#fff0f1';
+    btn.style.color = '#e53935';
+  } else {
+    p.likes++;
+    btn.classList.add('liked');
+    btn.style.background = '#e53935';
+    btn.style.color = '#fff';
+    toast('❤️ Liked!');
+    if (navigator.vibrate) navigator.vibrate([20]);
+  }
+  const likeEl = document.getElementById('detailLikeCount');
+  if (likeEl) likeEl.textContent = p.likes >= 1000 ? (p.likes/1000).toFixed(1)+'k' : p.likes;
+  // Feed mein bhi update karo
+  const pinMeta = document.querySelector(`#pin${p.id} .pin-likes`);
+  if (pinMeta) pinMeta.textContent = '❤️ ' + (p.likes >= 1000 ? (p.likes/1000).toFixed(1)+'k' : p.likes);
+  // Firestore mein update karo
+  if (db && p.firestoreId) {
+    db.collection('posts').doc(p.firestoreId).update({ likes: p.likes }).catch(()=>{});
   }
 }
 
@@ -3023,22 +3122,33 @@ const _lastPinObs = new IntersectionObserver(entries=>{
     const imgH=160+(p.id%6)*35;
     let media='';
     const isB64s = p.src && p.src.startsWith('data:');
+
+    // ✅ Cloudinary thumbnail helper
+    function _thumb(url, w, h) {
+      if (!url || url.startsWith('data:')) return '';
+      if (url.includes('res.cloudinary.com') && (url.includes('/video/') || url.match(/\.(mp4|mov|webm)/i))) {
+        return url.replace('/upload/', `/upload/so_0,w_${w},h_${h},c_fill,q_auto/`).replace(/\.(mp4|mov|webm)(\?.*)?$/i, '.jpg');
+      }
+      return url.includes('?') ? url+`&w=${w}&h=${h}&auto=format&fit=crop` : url+`?w=${w}&h=${h}&auto=format&fit=crop`;
+    }
+
     if(p.type==='reel'){
-      const ts = isB64s ? p.src : (p.src.includes('?') ? p.src+'&auto=format&fit=crop&w=400&h=711' : p.src+'?w=400&auto=format&fit=crop&h=711');
-      media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:#f0f0f0"><img class="reel-thumb" src="${ts}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><video id="rv${p.id}" src="${p.vid||''}" muted loop playsinline preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video><div class="reel-badge">🎬 Reel</div><div class="reel-dur">▶ 0:${String(15+p.id%45).padStart(2,'0')}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
+      const ts = isB64s ? p.src : _thumb(p.src || p.vid, 400, 711);
+      const vs = p.vid || p.src || '';
+      media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">${ts?`<img class="reel-thumb" src="${ts}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">`:''}<video id="rv${p.id}" src="${vs}" muted loop playsinline preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video><div class="reel-badge">🎬 Reel</div><div class="reel-dur">▶ 0:${String(15+p.id%45).padStart(2,'0')}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
     } else if(p.type==='video'){
-      const vt = isB64s ? p.src : (p.src.includes('?') ? p.src+'&auto=format&fit=crop&h='+imgH : p.src+'?auto=format&fit=crop&h='+imgH);
-      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px"><video id="rv${p.id}" src="${p.vid||p.src}" muted loop playsinline preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video><img class="vid-thumb" src="${vt}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy"><div class="video-badge">🎥 Video</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
+      const vt = isB64s ? p.src : _thumb(p.src || p.vid, 400, imgH);
+      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)"><video id="rv${p.id}" src="${p.vid||p.src}" muted loop playsinline preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video>${vt?`<img class="vid-thumb" src="${vt}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none'">`:''}<div class="video-badge">🎥 Video</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
     } else {
-      const is = isB64s ? p.src : (p.src.includes('?') ? p.src+'&auto=format&fit=crop&h='+imgH : p.src+'?auto=format&fit=crop&h='+imgH);
-      media=`<div class="pin-img-wrap"><img src="${is}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" loading="lazy" alt="${p.title}"></div>`;
+      const is = isB64s ? p.src : (p.src && p.src.includes('?') ? p.src+'&auto=format&fit=crop&h='+imgH : (p.src||'')+'?auto=format&fit=crop&h='+imgH);
+      media=`<div class="pin-img-wrap"><img src="${is}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" loading="lazy" alt="${p.title}" onerror="this.style.background='#f0f0f0'"></div>`;
     }
     const card=document.createElement('div');
     card.className='pin'; card.id='pin'+p.id;
     card.setAttribute('onclick',`openDetail(${p.id})`);
     card.setAttribute('onmouseenter',`hoverPlay(${p.id})`);
     card.setAttribute('onmouseleave',`hoverStop(${p.id})`);
-    card.innerHTML=media+`<div class="pin-overlay"><div class="overlay-top"><button class="save-btn${savedSet.has(p.id)?' saved':''}" onclick="tgSave(event,${p.id})">${savedSet.has(p.id)?'✔ Saved':'Save'}</button></div><div class="overlay-bottom">${p.type!=='image'?`<button class="ov-btn" onclick="openReels(event,${p.id})">🎬</button>`:''}<button class="ov-btn" onclick="openShareFor(event,${p.id})">📤</button><button class="ov-btn" onclick="dlPin(event,${p.id})">⬇️</button></div></div><button class="note-icon-btn" onclick="openNoteModal(event,${p.id})" title="Note">📝</button>${pinNotes[p.id]?'<div class="note-dot"></div>':''}<button class="vsearch-btn" onclick="openVSearch(event,${p.id})" title="Visual search">🔍</button><div class="pin-info"><div class="pin-title">${p.title}</div></div><div class="pin-meta"><div class="pin-user"><img src="${p.user.avatar}" alt="${p.user.name}"><span>${p.user.name}</span></div><span class="pin-likes">❤️ ${p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes}</span></div>`;
+    card.innerHTML=media+`<div class="pin-overlay"><div class="overlay-top"><button class="save-btn${savedSet.has(p.id)?' saved':''}" onclick="tgSave(event,${p.id})">${savedSet.has(p.id)?'✔ Saved':'Save'}</button>${(p.user && p.user.name && myClickPinName && p.user.name.toLowerCase()===myClickPinName.toLowerCase())?`<button class="ov-btn" onclick="deletePin(event,${p.id})" title="Delete" style="background:rgba(220,38,38,.9);color:#fff;font-size:16px">🗑️</button>`:''}</div><div class="overlay-bottom">${p.type!=='image'?`<button class="ov-btn" onclick="openReels(event,${p.id})">🎬</button>`:''}<button class="ov-btn" onclick="openShareFor(event,${p.id})">📤</button><button class="ov-btn" onclick="dlPin(event,${p.id})">⬇️</button></div></div><button class="note-icon-btn" onclick="openNoteModal(event,${p.id})" title="Note">📝</button>${pinNotes[p.id]?'<div class="note-dot"></div>':''}<button class="vsearch-btn" onclick="openVSearch(event,${p.id})" title="Visual search">🔍</button><div class="pin-info"><div class="pin-title">${p.title}</div></div><div class="pin-meta"><div class="pin-user"><img src="${p.user.avatar}" alt="${p.user.name}"><span>${p.user.name}</span></div><span class="pin-likes">❤️ ${p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes}</span></div>`;
     grid.appendChild(card);
   });
   setTimeout(()=>observeVideoPins(),50);
@@ -3217,23 +3327,86 @@ function openComments(id) {
   activeCommentPin = id;
   const p = PIN_DATA.find(x => x.id === id);
   if (!p) return;
+
+  // ✅ Comment input mein apni real DP dikhao
+  const myAv = localStorage.getItem('cp_avatar');
+  const safeMyAv = (myAv && myAv.startsWith('http')) ? myAv : `https://i.pravatar.cc/60?img=${Math.abs((myClickPinName||'u').charCodeAt(0)%30)+1}`;
+  const avEl = document.getElementById('commentUserAv');
+  if (avEl) avEl.src = safeMyAv;
+
+  // Pehle local comments dikhao
+  _renderComments(id);
+
+  document.getElementById('commentsDrawer').classList.add('open');
+  document.getElementById('commentInput').focus();
+
+  // ✅ Firestore se load karo
+  loadCommentsFromFirestore(id);
+}
+
+function _renderComments(id) {
   const stored = commentsDB[id] || [];
-  const all = [...stored, ...SAMPLE_COMMENTS.slice(0, 2 + (id % 2))];
+  const all = [...stored];
+  // Sirf agar koi real comment nahi toh sample dikhao
+  if (all.length === 0) all.push(...SAMPLE_COMMENTS.slice(0, 2 + (id % 2)));
   document.getElementById('commentsCount').textContent = `(${all.length})`;
-  document.getElementById('commentsList').innerHTML = all.map(c => `
+  document.getElementById('commentsList').innerHTML = all.map((c,i) => `
     <div class="comment-item">
-      <img class="comment-av" src="${c.av || 'https://i.pravatar.cc/60?img=' + Math.floor(Math.random()*30+1)}" alt="">
+      <img class="comment-av" src="${(c.av && c.av.startsWith('http')) ? c.av : 'https://i.pravatar.cc/60?img=' + (Math.abs((c.name||'u').charCodeAt(0)%30)+1)}" alt="">
       <div class="comment-body">
         <div class="comment-name">${c.name}</div>
         <div class="comment-text">${c.text}</div>
         <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
           <span class="comment-time">${c.time}</span>
-          <button class="comment-like-btn" onclick="this.textContent='❤️ '+(parseInt(this.dataset.l||${c.likes||0})+1);this.dataset.l=(parseInt(this.dataset.l||${c.likes||0})+1)" data-l="${c.likes||0}">🤍 ${c.likes||0}</button>
+          <button class="comment-like-btn" id="clb_${id}_${i}" onclick="likeComment(${id},${i},this)" data-l="${c.likes||0}">🤍 ${c.likes||0}</button>
         </div>
       </div>
-    </div>`).join('') || '<div style="text-align:center;color:var(--muted);padding:30px;font-size:14px">Pehla comment likho! 💬 💬</div>';
-  document.getElementById('commentsDrawer').classList.add('open');
-  document.getElementById('commentInput').focus();
+    </div>`).join('') || '<div style="text-align:center;color:var(--muted);padding:30px;font-size:14px">Pehla comment likho! 💬</div>';
+}
+
+async function loadCommentsFromFirestore(pinId) {
+  if (!db) return;
+  try {
+    const firestoreId = (PIN_DATA.find(x=>x.id===pinId)||{}).firestoreId;
+    const queryId = firestoreId || String(pinId);
+    const snap = await db.collection('comments')
+      .where('pinId', '==', queryId)
+      .orderBy('createdAt', 'desc')
+      .limit(50).get();
+    if (snap.empty) return;
+    if (!commentsDB[pinId]) commentsDB[pinId] = [];
+    let added = 0;
+    snap.forEach(doc => {
+      const d = doc.data();
+      const exists = commentsDB[pinId].some(c => c.firestoreId === doc.id);
+      if (!exists) {
+        commentsDB[pinId].push({
+          firestoreId: doc.id,
+          av  : (d.av && d.av.startsWith('http')) ? d.av : '',
+          name: d.name || 'User',
+          text: d.text || '',
+          time: timeSince(d.createdAt),
+          likes: d.likes || 0
+        });
+        added++;
+      }
+    });
+    if (added > 0) {
+      localStorage.setItem('cp_comments', JSON.stringify(commentsDB));
+      _renderComments(pinId);
+    }
+  } catch(e) {
+    console.log('Comments load fail:', e.message);
+  }
+}
+
+function likeComment(pinId, idx, btn) {
+  const c = (commentsDB[pinId] || [])[idx];
+  if (!c) return;
+  c.likes = (c.likes || 0) + 1;
+  btn.textContent = '❤️ ' + c.likes;
+  btn.dataset.l = c.likes;
+  localStorage.setItem('cp_comments', JSON.stringify(commentsDB));
 }
 
 function closeComments() {
@@ -3247,8 +3420,12 @@ function postComment() {
   if (!text || !activeCommentPin) return;
   const id = activeCommentPin;
   if (!commentsDB[id]) commentsDB[id] = [];
+
+  const myAvatar = localStorage.getItem('cp_avatar');
+  const safeAvatar = (myAvatar && myAvatar.startsWith('http')) ? myAvatar : `https://i.pravatar.cc/60?img=${Math.abs((myClickPinName||'u').charCodeAt(0)%30)+1}`;
+
   const newC = {
-    av: `https://i.pravatar.cc/60?img=${Math.floor(Math.random()*30)+1}`,
+    av  : safeAvatar,
     name: myClickPinName || myClickPinId || 'Aap',
     text, time: 'Abhi', likes: 0
   };
@@ -3256,8 +3433,23 @@ function postComment() {
   localStorage.setItem('cp_comments', JSON.stringify(commentsDB));
   inp.value = '';
   if (navigator.vibrate) navigator.vibrate([15]);
-  openComments(id);
+  _renderComments(id);
   toast('💬 Comment post ho gaya!');
+
+  // ✅ Firestore mein bhi save karo
+  if (db) {
+    const p = PIN_DATA.find(x => x.id === id);
+    const queryId = (p && p.firestoreId) ? p.firestoreId : String(id);
+    db.collection('comments').add({
+      pinId    : queryId,
+      av       : safeAvatar,
+      name     : myClickPinName || myClickPinId || 'Aap',
+      text,
+      likes    : 0,
+      userId   : (fbAuth && fbAuth.currentUser) ? fbAuth.currentUser.uid : '',
+      createdAt: new Date().toISOString()
+    }).catch(e => console.log('Comment save fail:', e.message));
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -4478,7 +4670,7 @@ try {
     </div>
     <div class="comments-list" id="commentsList"></div>
     <div class="comments-input-row">
-      <img src="https://i.pravatar.cc/60?img=1" style="width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0">
+      <img id="commentUserAv" src="https://i.pravatar.cc/60?img=1" style="width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0">
       <input class="comment-inp" id="commentInput" placeholder="Comment likhein..." maxlength="200" onkeydown="if(event.key==='Enter')postComment()">
       <button class="comment-send" onclick="postComment()">➤</button>
     </div>
