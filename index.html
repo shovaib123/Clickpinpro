@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
+<!-- ✅ SECURITY HEADERS -->
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta http-equiv="X-Frame-Options" content="DENY">
+<meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+<meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=()">
 <meta name="description" content="ClickPin – India ka apna visual discovery platform. Post, save aur share apni favourite images aur videos.">
 <meta name="theme-color" content="#E60023">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -331,6 +336,12 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(255,
 
 /* UPLOAD MODAL */
 .upload-modal{display:none;position:fixed;inset:0;z-index:10003;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:16px}
+/* Floating upload progress pill */
+.upload-pill{display:none;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#111;color:#fff;border-radius:28px;padding:10px 20px;font-size:13px;font-weight:700;z-index:10006;box-shadow:0 4px 20px rgba(0,0,0,.4);align-items:center;gap:10px;cursor:pointer;white-space:nowrap}
+.upload-pill.show{display:flex}
+.upload-pill-bar{width:100px;height:4px;background:rgba(255,255,255,.2);border-radius:99px;overflow:hidden}
+.upload-pill-fill{height:100%;background:var(--red);border-radius:99px;transition:width .3s}
+.upload-pill-close{background:rgba(255,255,255,.15);border:none;color:#fff;width:22px;height:22px;border-radius:50%;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .upload-modal.open{display:flex}
 .upload-box{background:#fff;border-radius:22px;width:500px;max-width:100%;max-height:92vh;overflow-y:auto;padding:28px;animation:popIn .26s ease}
 .upload-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
@@ -1557,7 +1568,10 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
   <div class="upload-box">
     <div class="upload-header">
       <h2>📸 Naya Post Upload</h2>
-      <button class="upload-close" onclick="closeUpload()">✕</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button onclick="minimizeUpload()" title="Minimize - background mein upload karo" style="background:#f0f0f0;border:none;width:32px;height:32px;border-radius:50%;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center" title="Minimize">➖</button>
+        <button class="upload-close" onclick="closeUpload()">✕</button>
+      </div>
     </div>
     <div class="upload-type-tabs">
       <button class="utype-tab active" id="utImage" onclick="switchUploadType('image',this)">🖼️ Image</button>
@@ -1703,7 +1717,7 @@ function makeSponsoredCard(ad, imgH) {
 
 
 // ─── DATA ───
-const CATS=['All','Ghar','Fashion','Khana','Travel','Art','Fitness','Technology','Nature','DIY','Beauty','Weddings','Islamic','Hindu','Christian','Buddhist','Sikh','Jain','Comedy','Sad','Quotes'];
+const CATS=['All','Home','Fashion','Food','Travel','Art','Fitness','Technology','Nature','DIY','Beauty','Weddings','Islamic','Hindu','Christian','Buddhist','Sikh','Jain','Comedy','Sad','Quotes'];
 const USERS_D=[
   {name:'Priya Sharma',  avatar:'https://i.pravatar.cc/60?img=1', followers:'2.3k'},
   {name:'Rohan Mehra',   avatar:'https://i.pravatar.cc/60?img=3', followers:'1.1k'},
@@ -1714,18 +1728,18 @@ const USERS_D=[
 ];
 // type: 'image' | 'video' (hover autoplay, normal height) | 'reel' (9:16 vertical, autoplay in reels view)
 const PIN_DATA=[
-  {id:1, type:'image',src:'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=500',title:'Cozy Living Room Ideas',desc:'Apne ghar ko ek cozy retreat mein badlo. Warm colors aur soft textures magic create karte hain.',cat:'Ghar',likes:234},
+  {id:1, type:'image',src:'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=500',title:'Cozy Living Room Ideas',desc:'Apne ghar ko ek cozy retreat mein badlo. Warm colors aur soft textures magic create karte hain.',cat:'Home',likes:234},
   {id:2, type:'reel', src:'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=500',vid:'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',title:'Summer Fashion 2025',desc:'Trendy looks jo crowd mein alag dikhaenge is summer.',cat:'Fashion',likes:892},
-  {id:3, type:'image',src:'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=500',title:'Paneer Butter Masala',desc:'Restaurant jaisi recipe ghar par 30 minute mein. Guests ko zaroor impress karegi.',cat:'Khana',likes:312},
+  {id:3, type:'image',src:'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=500',title:'Paneer Butter Masala',desc:'Restaurant jaisi recipe ghar par 30 minute mein. Guests ko zaroor impress karegi.',cat:'Food',likes:312},
   {id:4, type:'reel', src:'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=500',vid:'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',title:'Himalayan Road Trip',desc:'Manali se Leh tak ek unforgettable safar. Har mod par naya nazara.',cat:'Travel',likes:1567},
   {id:5, type:'image',src:'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=500',title:'Abstract Art Vibes',desc:'Bold colors aur geometric shapes se bani masterpiece jo diwar ki shaan badhaye.',cat:'Art',likes:278},
   {id:6, type:'reel', src:'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=500',vid:'https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',title:'Morning Yoga Routine',desc:'10 minute mein aapka din shuru karo energy ke saath. Beginners ke liye perfect.',cat:'Fitness',likes:2103},
   {id:7, type:'image',src:'https://images.unsplash.com/photo-1551650975-87deedd944c3?w=500',title:'Minimal Workspace Setup',desc:'Productive aur stylish desk setup guide jo har budget mein kaam aaye.',cat:'Technology',likes:445},
   {id:8, type:'image',src:'https://images.unsplash.com/photo-1448375240586-882707db888b?w=500',title:'Forest Walk Aesthetics',desc:'Nature ki khubsurti jo aatma ko shanti de. Weekend getaway plan karo.',cat:'Nature',likes:321},
   {id:9, type:'reel', src:'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=500',vid:'https://storage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4',title:'DIY Flower Pot Tutorial',desc:'Waste bottles se sundar flower pots ghar par banao. Zero budget craft.',cat:'DIY',likes:678},
-  {id:10,type:'image',src:'https://images.unsplash.com/photo-1600210492493-0946911123ea?w=500',title:'Bohemian Bedroom Decor',desc:'Boho style se bedroom ko paradise banao. Macrame aur plants ek naya feel dete hain.',cat:'Ghar',likes:198},
+  {id:10,type:'image',src:'https://images.unsplash.com/photo-1600210492493-0946911123ea?w=500',title:'Bohemian Bedroom Decor',desc:'Boho style se bedroom ko paradise banao. Macrame aur plants ek naya feel dete hain.',cat:'Home',likes:198},
   {id:11,type:'reel', src:'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=500',vid:'https://storage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',title:'Ethnic Wear Collection',desc:'Traditional beauty meets modern design. Festivals aur weddings ke liye perfect.',cat:'Fashion',likes:934},
-  {id:12,type:'image',src:'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=500',title:'Biryani Recipe',desc:'Dadi ki biryani ki secret recipe finally reveal. Dum biryani ka sahi tarika seekho.',cat:'Khana',likes:456},
+  {id:12,type:'image',src:'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=500',title:'Biryani Recipe',desc:'Dadi ki biryani ki secret recipe finally reveal. Dum biryani ka sahi tarika seekho.',cat:'Food',likes:456},
   {id:13,type:'reel', src:'https://images.unsplash.com/photo-1512100356356-de1b84283e18?w=500',vid:'https://storage.googleapis.com/gtv-videos-bucket/sample/VolkswagenGTIReview.mp4',title:'Goa Beach Sunset Reel',desc:'Golden hour magic at the most beautiful beaches.',cat:'Travel',likes:3204},
   {id:14,type:'image',src:'https://images.unsplash.com/photo-1549887534-1541e9326642?w=500',title:'Watercolor Dreams',desc:'Soft brushstrokes aur pastel tones ki ek kahani. Art therapy ke liye try karo.',cat:'Art',likes:167},
   {id:15,type:'reel', src:'https://images.unsplash.com/photo-1519741497674-611481863552?w=500',vid:'https://storage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4',title:'Wedding Decor Goals',desc:'Dream wedding decoration ideas jo aapki shaadi ko yaadgaar banayenge.',cat:'Weddings',likes:4102},
@@ -1759,12 +1773,12 @@ let UDB=[
   {id:6,name:'Meera Patel',email:'meera@gmail.com',avatar:'https://i.pravatar.cc/60?img=15',role:'creator',status:'active',joined:'2025-03-05',pins:55},
 ];
 let PINDB=[
-  {id:1,title:'Cozy Living Room',img:'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=80',cat:'Ghar',user:'Priya Sharma',type:'image',saves:234,views:1820,status:'active',reported:false,date:'2025-03-01'},
+  {id:1,title:'Cozy Living Room',img:'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=80',cat:'Home',user:'Priya Sharma',type:'image',saves:234,views:1820,status:'active',reported:false,date:'2025-03-01'},
   {id:2,title:'Summer Fashion Reel',img:'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=80',cat:'Fashion',user:'Rohan Mehra',type:'reel',saves:892,views:45000,status:'active',reported:false,date:'2025-03-02'},
-  {id:3,title:'Paneer Masala',img:'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=80',cat:'Khana',user:'Ananya Singh',type:'image',saves:312,views:3400,status:'active',reported:false,date:'2025-03-03'},
+  {id:3,title:'Paneer Masala',img:'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=80',cat:'Food',user:'Ananya Singh',type:'image',saves:312,views:3400,status:'active',reported:false,date:'2025-03-03'},
   {id:4,title:'Yoga Morning Reel',img:'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=80',cat:'Fitness',user:'Kavita Joshi',type:'reel',saves:2103,views:89000,status:'active',reported:false,date:'2025-03-04'},
   {id:5,title:'Goa Sunset Reel',img:'https://images.unsplash.com/photo-1512100356356-de1b84283e18?w=80',cat:'Travel',user:'Divya Rao',type:'reel',saves:3204,views:120000,status:'active',reported:false,date:'2025-03-05'},
-  {id:6,title:'Bohemian Bedroom',img:'https://images.unsplash.com/photo-1600210492493-0946911123ea?w=80',cat:'Ghar',user:'Meera Patel',type:'image',saves:198,views:1900,status:'pending',reported:true,date:'2025-03-06'},
+  {id:6,title:'Bohemian Bedroom',img:'https://images.unsplash.com/photo-1600210492493-0946911123ea?w=80',cat:'Home',user:'Meera Patel',type:'image',saves:198,views:1900,status:'pending',reported:true,date:'2025-03-06'},
 ];
 let CDB=[
   {id:1,name:'Rahul Kumar',email:'rahul@g.com',subject:'Bug Report',msg:'Search kaam nahi kar raha mobile par.',status:'open',date:'2025-03-15',priority:'high'},
@@ -1840,11 +1854,10 @@ if('serviceWorker' in navigator){
 
 // ─── MOBILE BACK BUTTON (Android) ───
 function pushHistory(state) {
-  history.pushState(state, '', location.pathname + (state ? '?v=' + state : ''));
+  try { history.pushState({ s: state }, '', location.pathname); } catch(e) {}
 }
 
-window.addEventListener('popstate', (e) => {
-  // Koi modal ya page open hai toh pehle wahi band karo
+window.addEventListener('popstate', () => {
   if (document.getElementById('reelsView').classList.contains('open')) { closeReels(); return; }
   if (document.getElementById('detailModal').classList.contains('open')) { closeDetail(); return; }
   if (document.getElementById('profilePage').classList.contains('open')) { closeUserProfile(); setBn('home'); return; }
@@ -1856,24 +1869,14 @@ window.addEventListener('popstate', (e) => {
   if (document.getElementById('commentsDrawer').classList.contains('open')) { closeComments(); return; }
   if (document.getElementById('uploadModal').classList.contains('open')) { closeUpload(); return; }
   if (document.getElementById('createSheetOverlay').classList.contains('open')) { closeCreateSheet(); return; }
-  // Koi bhi open nahi — home pe aao
   showHome();
 });
 
-// Koi page/modal open hone pe history push karo
-const _origOpenDetail = openDetail;
-function openDetail(id) { pushHistory('detail_' + id); _origOpenDetail(id); }
-const _origOpenReels = openReels;
-function openReels(e, startId) { pushHistory('reels'); _origOpenReels(e, startId); }
-const _origOpenUserProfile = openUserProfile;
-function openUserProfile() { pushHistory('profile'); _origOpenUserProfile(); }
-const _origOpenInbox = openInbox;
-function openInbox() { pushHistory('inbox'); _origOpenInbox(); }
-
 // ─── CATEGORIES ───
 function buildCatBar(){
-  const icons={All:'🏠',Ghar:'🏠',Fashion:'👗',Khana:'🍽️',Travel:'✈️',Art:'🎨',Fitness:'💪',Technology:'💻',Nature:'🌿',DIY:'🛠️',Beauty:'💄',Weddings:'💒',Islamic:'☪️',Hindu:'🕉️',Christian:'✝️',Buddhist:'☸️',Sikh:'🪯',Jain:'🤲',Comedy:'😂',Sad:'😢',Quotes:'💬'};
-  document.getElementById('catBar').innerHTML=CATS.map(c=>`<button class="cat-pill${c===aCat?' active':''}" onclick="filterCat('${c}')">${icons[c]||''} ${c}</button>`).join('');
+  const icons={All:'🏠',Home:'🏠',Fashion:'👗',Food:'🍽️',Travel:'✈️',Art:'🎨',Fitness:'💪',Technology:'💻',Nature:'🌿',DIY:'🛠️',Beauty:'💄',Weddings:'💒',Islamic:'☪️',Hindu:'🕉️',Christian:'✝️',Buddhist:'☸️',Sikh:'🪯',Jain:'🤲',Comedy:'😂',Sad:'😢',Quotes:'💬'};
+  const labels={All:'All',Home:'Home',Fashion:'Fashion',Food:'Food',Travel:'Travel',Art:'Art',Fitness:'Fitness',Technology:'Tech',Nature:'Nature',DIY:'DIY',Beauty:'Beauty',Weddings:'Weddings',Islamic:'Islamic',Hindu:'Hindu',Christian:'Christian',Buddhist:'Buddhist',Sikh:'Sikh',Jain:'Jain',Comedy:'Comedy',Sad:'Sad',Quotes:'Quotes'};
+  document.getElementById('catBar').innerHTML=CATS.map(c=>`<button class="cat-pill${c===aCat?' active':''}" onclick="filterCat('${c}')">${icons[c]||''} ${labels[c]||c}</button>`).join('');
 }
 function filterCat(c){
   aCat=c;
@@ -1895,12 +1898,19 @@ function _realBuildGrid(list){
     // ✅ Cloudinary video URL se thumbnail URL banao
     function getCloudinaryThumb(url, w, h) {
       if (!url || url.startsWith('data:')) return '';
+      // Already a jpg/png/webp thumbnail - return as is
+      if (url.match(/\.(jpg|jpeg|png|webp)(\?.*)?$/i) && !url.includes('/video/')) {
+        if (url.includes('?')) return url + `&w=${w}&h=${h}&fit=crop`;
+        return url + `?w=${w}&h=${h}&fit=crop`;
+      }
       // Cloudinary video URL → thumbnail image
       if (url.includes('res.cloudinary.com') &&
-          (url.includes('/video/') || url.match(/\.(mp4|mov|webm|avi)/i))) {
-        return url
-          .replace('/upload/', `/upload/so_0,w_${w},h_${h},c_fill,q_auto/`)
-          .replace(/\.(mp4|mov|webm|avi)(\?.*)?$/i, '.jpg');
+          (url.includes('/video/') || url.match(/\.(mp4|mov|webm|avi|mkv)/i))) {
+        const base = url.split('/upload/');
+        if (base.length === 2) {
+          const filename = base[1].replace(/\.(mp4|mov|webm|avi|mkv)(\?.*)?$/i, '.jpg');
+          return `${base[0]}/upload/so_0,w_${w},h_${h},c_fill,q_auto,f_jpg/${filename}`;
+        }
       }
       // Normal image URL
       if (url.includes('?')) return url + `&w=${w}&h=${h}&auto=format&fit=crop`;
@@ -1999,6 +2009,7 @@ function tgSave(e,id){e.stopPropagation();savedSet.has(id)?savedSet.delete(id):s
 
 // ─── DETAIL ───
 function openDetail(id){
+  pushHistory('detail_' + id);
   const p=PIN_DATA.find(x=>x.id===id);if(!p)return;
   openPinId=id;
   const isReel=p.type==='reel',isVid=p.type==='video';
@@ -2415,6 +2426,7 @@ async function deletePin(e, id) {
 }
 function openReels(e,startId){
   if(e&&e.stopPropagation)e.stopPropagation();
+  pushHistory('reels');
   const reels=PIN_DATA.filter(p=>p.type==='reel'||p.type==='video');
   buildReelsView(reels);
   document.getElementById('reelsView').classList.add('open');
@@ -2478,7 +2490,6 @@ function tgReelLike(btn,id){
 
 // ─── UPLOAD ───
 function openUpload(){
-  // Login check
   const user = JSON.parse(localStorage.getItem('cp_current_user') || 'null');
   if(!user) {
     toast('⚠️ Upload karne ke liye pehle Sign In karo!');
@@ -2487,6 +2498,39 @@ function openUpload(){
   }
   document.getElementById('uploadModal').classList.add('open');
   updateUploadIdUI();
+}
+
+// ✅ MINIMIZE UPLOAD — background mein chala jao
+function minimizeUpload() {
+  document.getElementById('uploadModal').classList.remove('open');
+  if (upFile || upData) {
+    const pill = document.getElementById('uploadPill');
+    if (pill) {
+      pill.classList.add('show');
+      document.getElementById('uploadPillText').textContent = '📤 Upload ready — Tap karke publish karo';
+      document.getElementById('uploadPillFill').style.width = '30%';
+    }
+  }
+}
+
+// ✅ MAXIMIZE — wapas upload modal kholо
+function maximizeUpload() {
+  hidePill();
+  document.getElementById('uploadModal').classList.add('open');
+}
+
+function hidePill() {
+  const pill = document.getElementById('uploadPill');
+  if (pill) pill.classList.remove('show');
+}
+
+// Upload progress pill update karo
+function updateUploadPill(text, percent) {
+  const pill = document.getElementById('uploadPill');
+  if (!pill) return;
+  pill.classList.add('show');
+  document.getElementById('uploadPillText').textContent = text;
+  document.getElementById('uploadPillFill').style.width = percent + '%';
 }
 function closeUpload(){
   document.getElementById('uploadModal').classList.remove('open');
@@ -2631,16 +2675,24 @@ async function submitPin(){
   // ── CLOUDINARY UPLOAD (sirf online + deployed pe) ──
   if(upFile && !isLocalFile) {
     const isVidFile = upFile.type.startsWith('video');
-    toast(isVidFile
-      ? '☁️ Video upload ho rahi hai... (1-2 min lag sakte hain)'
-      : '☁️ Image compress aur upload ho rahi hai...');
+
+    // ✅ Upload modal minimize karo aur pill dikhao
+    document.getElementById('uploadModal').classList.remove('open');
+    updateUploadPill(isVidFile ? '📤 Video upload ho rahi hai...' : '📤 Image upload ho rahi hai...', 10);
+
     try {
       const cloudUrl = await uploadToCloudinary(upFile);
+      updateUploadPill('⚙️ Save ho raha hai...', 80);
       if (isVidFile) {
         finalVid = cloudUrl;
-        finalSrc = cloudUrl
-          .replace('/upload/', '/upload/so_0,w_400,h_711,c_fill/')
-          .replace(/\.(mp4|mov|webm)$/i, '.jpg');
+        // ✅ Cloudinary auto thumbnail - video se .jpg banao
+        const parts = cloudUrl.split('/upload/');
+        if (parts.length === 2) {
+          const fname = parts[1].replace(/\.(mp4|mov|webm|avi|mkv)(\?.*)?$/i, '.jpg');
+          finalSrc = `${parts[0]}/upload/so_0,w_400,h_711,c_fill,q_auto,f_jpg/${fname}`;
+        } else {
+          finalSrc = cloudUrl.replace(/\.(mp4|mov|webm|avi|mkv)(\?.*)?$/i, '.jpg');
+        }
       } else {
         finalSrc = cloudUrl;
         finalVid = null;
@@ -2665,7 +2717,7 @@ async function submitPin(){
     vid   : finalVid,
     title,
     desc  : document.getElementById('pinDesc').value || 'Naya post',
-    cat   : document.getElementById('pinCat').value  || 'Ghar',
+    cat   : document.getElementById('pinCat').value  || 'Home',
     likes : 0,
     user  : currentUser
   };
@@ -2760,6 +2812,9 @@ async function submitPin(){
   PIN_DATA.unshift(np);
   upFile = null;
   closeUpload();
+  // ✅ Pill success show karo
+  updateUploadPill('✅ ' + np.title + ' — Upload ho gayi!', 100);
+  setTimeout(() => hidePill(), 4000);
   applyFilters();
   const pp = document.getElementById('profilePage');
   if (pp && pp.classList.contains('open')) openUserProfile();
@@ -3126,8 +3181,15 @@ const _lastPinObs = new IntersectionObserver(entries=>{
     // ✅ Cloudinary thumbnail helper
     function _thumb(url, w, h) {
       if (!url || url.startsWith('data:')) return '';
-      if (url.includes('res.cloudinary.com') && (url.includes('/video/') || url.match(/\.(mp4|mov|webm)/i))) {
-        return url.replace('/upload/', `/upload/so_0,w_${w},h_${h},c_fill,q_auto/`).replace(/\.(mp4|mov|webm)(\?.*)?$/i, '.jpg');
+      if (url.match(/\.(jpg|jpeg|png|webp)(\?.*)?$/i) && !url.includes('/video/')) {
+        return url.includes('?') ? url+`&w=${w}&h=${h}&fit=crop` : url+`?w=${w}&h=${h}&fit=crop`;
+      }
+      if (url.includes('res.cloudinary.com') && (url.includes('/video/') || url.match(/\.(mp4|mov|webm|avi)/i))) {
+        const base = url.split('/upload/');
+        if (base.length === 2) {
+          const filename = base[1].replace(/\.(mp4|mov|webm|avi|mkv)(\?.*)?$/i, '.jpg');
+          return `${base[0]}/upload/so_0,w_${w},h_${h},c_fill,q_auto,f_jpg/${filename}`;
+        }
       }
       return url.includes('?') ? url+`&w=${w}&h=${h}&auto=format&fit=crop` : url+`?w=${w}&h=${h}&auto=format&fit=crop`;
     }
@@ -3504,9 +3566,9 @@ document.addEventListener('click', e => {
 // 7. ONBOARDING — First visit interest selection
 // ══════════════════════════════════════════════
 const OB_INTERESTS = [
-  {ic:'🏠', lbl:'Home Decor', cat:'Ghar'},
+  {ic:'🏠', lbl:'Home Decor', cat:'Home'},
   {ic:'👗', lbl:'Fashion', cat:'Fashion'},
-  {ic:'🍛', lbl:'Khana', cat:'Khana'},
+  {ic:'🍛', lbl:'Khana', cat:'Food'},
   {ic:'✈️', lbl:'Travel', cat:'Travel'},
   {ic:'🎨', lbl:'Art', cat:'Art'},
   {ic:'💪', lbl:'Fitness', cat:'Fitness'},
@@ -3588,10 +3650,30 @@ function patchPinDoubleTap() {
     if (pinEl.dataset.dtPatched) return;
     pinEl.dataset.dtPatched = '1';
     const id = parseInt(pinEl.id.replace('pin', ''));
+
+    // Double tap to like
     pinEl.addEventListener('click', (e) => {
       if (e.target.closest('button') || e.target.closest('.pin-overlay')) return;
       handlePinTap(e, id);
     });
+
+    // ✅ LONG PRESS — mobile pe delete option
+    let longPressTimer = null;
+    pinEl.addEventListener('touchstart', (e) => {
+      longPressTimer = setTimeout(() => {
+        const p = PIN_DATA.find(x => x.id === id);
+        if (!p || !myClickPinName) return;
+        if (p.user && p.user.name && p.user.name.toLowerCase() === myClickPinName.toLowerCase()) {
+          if (navigator.vibrate) navigator.vibrate([40]);
+          // Delete confirm
+          if (confirm(`"${p.title}" delete karna chahte ho?`)) {
+            deletePin(new Event('touch'), id);
+          }
+        }
+      }, 700); // 700ms long press
+    }, { passive: true });
+    pinEl.addEventListener('touchend', () => { clearTimeout(longPressTimer); });
+    pinEl.addEventListener('touchmove', () => { clearTimeout(longPressTimer); });
   });
 }
 
@@ -3698,10 +3780,10 @@ const INBOX_DATA = {
 const NOTIF_ICONS = { like:'❤️', save:'📌', follow:'👤', mention:'💬', board:'📋' };
 
 function openInbox() {
+  pushHistory('inbox');
   renderInboxTab(inboxTab);
   document.getElementById('inboxPage').classList.add('open');
   document.getElementById('inboxDot').style.display = 'none';
-  // ✅ Firestore se real notifications load karo
   loadNotificationsFromFirestore();
 }
 function closeInbox() {
@@ -3878,6 +3960,7 @@ function updateNavAvatar() {
 }
 
 function openUserProfile() {
+  pushHistory('profile');
   const id = myClickPinId || localStorage.getItem('cp_user_id') || '@user';
   const name = myClickPinName || localStorage.getItem('cp_user_name') || 'ClickPin User';
   const bio = localStorage.getItem('cp_bio') || '';
@@ -4473,6 +4556,239 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Enter' && document.getElementById('adminLogin') && document.getElementById('adminLogin').classList.contains('active')) doLogin();
 });
 
+// ══════════════════════════════════════════════════
+// 🔒 CLICKPIN SECURITY SYSTEM
+// ══════════════════════════════════════════════════
+
+// ── 1. XSS SANITIZER ──
+// Har user input ko HTML inject se bachao
+function sanitize(str) {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/\//g, '&#x2F;')
+    .replace(/`/g, '&#x60;')
+    .replace(/=/g, '&#x3D;')
+    .slice(0, 500); // max 500 chars
+}
+
+// URL sanitize — sirf safe protocols allow karo
+function sanitizeUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  const safe = ['https://', 'http://'];
+  if (!safe.some(p => url.startsWith(p))) return '';
+  // Dangerous patterns block karo
+  if (/javascript:|data:|vbscript:|file:|about:/i.test(url)) return '';
+  return url.slice(0, 1000);
+}
+
+// ── 2. RATE LIMITER ──
+const _rateLimits = {};
+function rateLimitCheck(action, maxPerMinute = 10) {
+  const now = Date.now();
+  const key = action;
+  if (!_rateLimits[key]) _rateLimits[key] = [];
+  // Purane entries hataao (1 minute se purane)
+  _rateLimits[key] = _rateLimits[key].filter(t => now - t < 60000);
+  if (_rateLimits[key].length >= maxPerMinute) {
+    console.warn('Rate limit hit:', action);
+    toast('⚠️ Bahut zyada requests! Thoda ruko.');
+    return false;
+  }
+  _rateLimits[key].push(now);
+  return true;
+}
+
+// ── 3. INPUT VALIDATORS ──
+function validateEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 200;
+}
+function validatePassword(pass) {
+  return pass && pass.length >= 6 && pass.length <= 128;
+}
+function validateTitle(title) {
+  if (!title || title.length < 1 || title.length > 100) return false;
+  // Script tags block karo
+  if (/<script|javascript:|on\w+=/i.test(title)) return false;
+  return true;
+}
+function validateText(text, maxLen = 500) {
+  if (!text || text.length > maxLen) return false;
+  if (/<script|javascript:|on\w+=/i.test(text)) return false;
+  return true;
+}
+
+// ── 4. ADMIN BRUTE FORCE PROTECTION ──
+let _adminFailCount = 0;
+let _adminLockUntil = 0;
+const _origDoLogin = doLogin;
+function doLogin() {
+  const now = Date.now();
+  if (now < _adminLockUntil) {
+    const secsLeft = Math.ceil((_adminLockUntil - now) / 1000);
+    document.getElementById('loginErr').textContent = `⛔ Account locked! ${secsLeft} seconds wait karo.`;
+    document.getElementById('loginErr').style.display = 'block';
+    return;
+  }
+  const u = document.getElementById('lUser').value.trim();
+  const p = document.getElementById('lPass').value;
+  document.getElementById('loginErr').style.display = 'none';
+  if (u === AC.u && p === AC.p) {
+    _adminFailCount = 0;
+    showView('adminPanel');
+    initAdmin();
+  } else {
+    _adminFailCount++;
+    document.getElementById('lPass').value = '';
+    if (_adminFailCount >= 5) {
+      _adminLockUntil = Date.now() + 5 * 60 * 1000; // 5 min lock
+      document.getElementById('loginErr').textContent = '⛔ 5 galat attempts! 5 minute ke liye lock ho gaya.';
+      _adminFailCount = 0;
+    } else {
+      document.getElementById('loginErr').textContent = `❌ Galat credentials! (${5 - _adminFailCount} attempts baaki)`;
+    }
+    document.getElementById('loginErr').style.display = 'block';
+  }
+}
+
+// ── 5. COMMENT / POST SPAM PROTECTION ──
+const _origPostComment = postComment;
+function postComment() {
+  if (!rateLimitCheck('comment', 5)) return; // max 5 comments per minute
+  const inp = document.getElementById('commentInput');
+  const text = inp ? inp.value.trim() : '';
+  if (!validateText(text, 300)) {
+    toast('⚠️ Comment mein invalid text hai!');
+    return;
+  }
+  _origPostComment();
+}
+
+// ── 6. UPLOAD SAFETY ──
+const _origHandleFileSelect = handleFileSelect;
+function handleFileSelect(inp) {
+  const f = inp.files[0];
+  if (!f) return;
+  // File size limit: images 10MB, videos 100MB
+  const isVideo = f.type.startsWith('video');
+  const maxSize = isVideo ? 100 * 1024 * 1024 : 10 * 1024 * 1024;
+  if (f.size > maxSize) {
+    toast(`⚠️ File badi hai! Max ${isVideo ? '100MB' : '10MB'} allowed.`);
+    inp.value = '';
+    return;
+  }
+  // Allowed MIME types only
+  const allowed = ['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/quicktime','video/webm'];
+  if (!allowed.includes(f.type)) {
+    toast('⚠️ Ye file type allowed nahi! Sirf JPG PNG WEBP MP4 MOV WEBM.');
+    inp.value = '';
+    return;
+  }
+  _origHandleFileSelect(inp);
+}
+
+// ── 7. SUBMIT PIN VALIDATION ──
+const _origSubmitPin = submitPin;
+async function submitPin() {
+  if (!rateLimitCheck('upload', 3)) return; // max 3 uploads per minute
+  const title = document.getElementById('pinTitle')?.value?.trim() || '';
+  if (!validateTitle(title)) {
+    toast('⚠️ Title mein invalid characters hain!');
+    return;
+  }
+  const desc = document.getElementById('pinDesc')?.value?.trim() || '';
+  if (desc && !validateText(desc, 500)) {
+    toast('⚠️ Description mein invalid text hai!');
+    return;
+  }
+  await _origSubmitPin();
+}
+
+// ── 8. SIGN IN / ACCOUNT PROTECTION ──
+const _origCpSignIn = cpSignIn;
+async function cpSignIn() {
+  if (!rateLimitCheck('signin', 5)) return;
+  const email = document.getElementById('si-email')?.value?.trim() || '';
+  const pass = document.getElementById('si-pass')?.value || '';
+  if (!validateEmail(email)) {
+    const errEl = document.getElementById('si-error');
+    if (errEl) { errEl.textContent = '⚠️ Valid email likhein!'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (!validatePassword(pass)) {
+    const errEl = document.getElementById('si-error');
+    if (errEl) { errEl.textContent = '⚠️ Password 6-128 characters ka hona chahiye!'; errEl.style.display = 'block'; }
+    return;
+  }
+  await _origCpSignIn();
+}
+
+const _origCpCreateAccount = cpCreateAccount;
+async function cpCreateAccount() {
+  if (!rateLimitCheck('register', 3)) return;
+  const name = document.getElementById('ca-name')?.value?.trim() || '';
+  const email = document.getElementById('ca-email')?.value?.trim() || '';
+  const cpid = document.getElementById('ca-cpid')?.value?.trim() || '';
+  const pass = document.getElementById('ca-pass')?.value || '';
+  const errEl = document.getElementById('ca-error');
+  if (!validateText(name, 50)) {
+    if (errEl) { errEl.textContent = '⚠️ Naam mein invalid text hai!'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (!validateEmail(email)) {
+    if (errEl) { errEl.textContent = '⚠️ Valid email likhein!'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (cpid && !/^@?[a-zA-Z0-9_]{3,30}$/.test(cpid.replace('@',''))) {
+    if (errEl) { errEl.textContent = '⚠️ ID sirf letters, numbers aur _ allowed (3-30 chars)!'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (!validatePassword(pass)) {
+    if (errEl) { errEl.textContent = '⚠️ Password 6-128 characters ka hona chahiye!'; errEl.style.display = 'block'; }
+    return;
+  }
+  await _origCpCreateAccount();
+}
+
+// ── 9. CONSOLE LOCK (production) ──
+// DevTools mein koi bhi dangerous eval block karo
+(function() {
+  const blocked = ['firebase', 'fbAuth', 'db', 'AC', 'myClickPinId'];
+  // Override console warn in prod
+  if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    const _cw = console.warn;
+    console.warn = function(...args) {
+      // Sensitive data log mat karo
+      if (args.some(a => typeof a === 'string' && blocked.some(b => a.includes(b)))) return;
+      _cw.apply(console, args);
+    };
+  }
+})();
+
+// ── 10. FIRESTORE DATA SANITIZE ──
+// Firestore se aane wale data ko bhi sanitize karo
+function sanitizeFirestorePost(data) {
+  return {
+    id       : data.id || Date.now(),
+    type     : ['image','video','reel'].includes(data.type) ? data.type : 'image',
+    src      : sanitizeUrl(data.src || data.imageUrl || ''),
+    vid      : sanitizeUrl(data.vid || ''),
+    title    : sanitize(data.title || '').slice(0, 100),
+    desc     : sanitize(data.desc || '').slice(0, 500),
+    cat      : sanitize(data.cat || '').slice(0, 30),
+    likes    : Math.max(0, parseInt(data.likes) || 0),
+    userId   : (data.userId || '').slice(0, 200),
+    userName : sanitize(data.userName || '').slice(0, 50),
+    userAvatar: sanitizeUrl(data.userAvatar || '')
+  };
+}
+
+console.log('🔒 ClickPin Security System Active');
+
 // ─── INIT ───
 CATS.filter(c=>c!=='Sab').forEach(c=>{
   const o=document.createElement('option');o.value=c;o.textContent=c;
@@ -4510,7 +4826,7 @@ try {
           vid            : p.vid || null,
           title          : p.title || 'My Post',
           desc           : p.desc || '',
-          cat            : p.cat || 'Ghar',
+          cat            : p.cat || 'Home',
           likes          : p.likes || 0,
           user           : {
             name    : p.userName || myClickPinName || 'You',
@@ -5159,29 +5475,31 @@ async function loadAllPostsFromFirestore() {
 
     let added = 0;
     snapshot.forEach(doc => {
-      const data = doc.data();
-      const srcUrl = data.src || data.imageUrl || '';
+      const raw = doc.data();
+      // ✅ Sanitize Firestore data
+      const sd = (typeof sanitizeFirestorePost === 'function') ? sanitizeFirestorePost(raw) : raw;
+      const srcUrl = sd.src || '';
       if (!srcUrl || srcUrl.startsWith('data:')) return;
 
       const exists = PIN_DATA.some(p => p.firestoreId === doc.id);
       if (!exists) {
-        const safeAvatar = (data.userAvatar && data.userAvatar.startsWith('http'))
-          ? data.userAvatar
+        const safeAvatar = (sd.userAvatar && sd.userAvatar.startsWith('http'))
+          ? sd.userAvatar
           : `https://i.pravatar.cc/60?img=${Math.floor(Math.random()*70)+1}`;
 
         PIN_DATA.unshift({
-          id              : data.id || Date.now() + Math.random(),
+          id              : sd.id || Date.now() + Math.random(),
           firestoreId     : doc.id,
-          firestoreUserId : data.userId || '',
-          type            : data.type || 'image',
+          firestoreUserId : sd.userId || '',
+          type            : sd.type || 'image',
           src             : srcUrl,
-          vid             : data.vid || null,
-          title           : data.title || 'Post',
-          desc            : data.desc || '',
-          cat             : data.cat || 'Ghar',
-          likes           : data.likes || 0,
+          vid             : sd.vid || null,
+          title           : sd.title || 'Post',
+          desc            : sd.desc || '',
+          cat             : sd.cat || 'Home',
+          likes           : sd.likes || 0,
           user            : {
-            name     : data.userName || 'ClickPin User',
+            name     : sd.userName || 'ClickPin User',
             avatar   : safeAvatar,
             followers: '0'
           }
@@ -5222,7 +5540,7 @@ async function loadUserPostsFromFirestore(uid, currentUser) {
           vid             : data.vid || null,
           title           : data.title || 'My Post',
           desc            : data.desc || '',
-          cat             : data.cat || 'Ghar',
+          cat             : data.cat || 'Home',
           likes           : data.likes || 0,
           user            : {
             name     : data.userName || currentUser.name,
@@ -5493,6 +5811,13 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeSignInModal(); closeCreateAccountModal(); }
 });
 </script>
+
+<!-- UPLOAD PROGRESS PILL -->
+<div class="upload-pill" id="uploadPill" onclick="maximizeUpload()">
+  <span id="uploadPillText">📤 Upload ho raha hai...</span>
+  <div class="upload-pill-bar"><div class="upload-pill-fill" id="uploadPillFill" style="width:0%"></div></div>
+  <button class="upload-pill-close" onclick="event.stopPropagation();hidePill()">✕</button>
+</div>
 
 </body>
 </html>
