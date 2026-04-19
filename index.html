@@ -1898,34 +1898,31 @@ function _realBuildGrid(list){
     // ✅ Cloudinary video URL se thumbnail URL banao
     function getCloudinaryThumb(url, w, h) {
       if (!url || url.startsWith('data:')) return '';
-      // Already a static image — return with resize params
-      if (url.match(/\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i) && !url.includes('/video/')) {
-        return url.includes('?') ? url + `&w=${w}&h=${h}&fit=crop` : url + `?w=${w}&h=${h}&fit=crop`;
+      // Already a jpg/png/webp thumbnail - return as is
+      if (url.match(/\.(jpg|jpeg|png|webp)(\?.*)?$/i) && !url.includes('/video/')) {
+        if (url.includes('?')) return url + `&w=${w}&h=${h}&fit=crop`;
+        return url + `?w=${w}&h=${h}&fit=crop`;
       }
-      // Cloudinary video URL → extract thumbnail using so_1 (1 second frame)
-      if (url.includes('res.cloudinary.com')) {
+      // Cloudinary video URL → thumbnail image
+      if (url.includes('res.cloudinary.com') &&
+          (url.includes('/video/') || url.match(/\.(mp4|mov|webm|avi|mkv)/i))) {
         const base = url.split('/upload/');
         if (base.length === 2) {
-          // Remove any existing transformations
-          const rawPath = base[1].replace(/^[^/]+\//, ''); // strip version like v123456/
-          const hasVersion = base[1].match(/^v\d+\//);
-          const versionPart = hasVersion ? hasVersion[0] : '';
-          const filePart = base[1].replace(/^v?\d*\/?/, '').replace(/\.(mp4|mov|webm|avi|mkv|m4v)(\?.*)?$/i, '.jpg');
-          return `${base[0]}/upload/so_1,w_${w},h_${h},c_fill,q_auto,f_jpg/${versionPart}${filePart}`;
+          const filename = base[1].replace(/\.(mp4|mov|webm|avi|mkv)(\?.*)?$/i, '.jpg');
+          return `${base[0]}/upload/so_0,w_${w},h_${h},c_fill,q_auto,f_jpg/${filename}`;
         }
       }
-      // Unsplash or other image URL
+      // Normal image URL
       if (url.includes('?')) return url + `&w=${w}&h=${h}&auto=format&fit=crop`;
       return url + `?w=${w}&h=${h}&auto=format&fit=crop`;
     }
 
     if(p.type==='reel'){
       const isB64 = p.src && p.src.startsWith('data:');
-      // vid = actual video URL, src = thumbnail (may also be video URL for old posts)
+      // src video URL bhi ho sakta hai — dono cases handle karo
+      const rawThumbUrl = p.src || p.vid || '';
+      const thumbSrc = isB64 ? p.src : getCloudinaryThumb(rawThumbUrl, 400, 711);
       const vidSrc = p.vid || p.src || '';
-      // For thumbnail: prefer src if it's already a jpg, else generate from vid
-      let rawThumb = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv)/i)) ? p.src : vidSrc;
-      const thumbSrc = isB64 ? p.src : getCloudinaryThumb(rawThumb, 400, 711);
       media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">
         ${thumbSrc ? `<img class="reel-thumb" src="${thumbSrc}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none'">` : ''}
         <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video>
@@ -1935,9 +1932,9 @@ function _realBuildGrid(list){
       </div>`;
     } else if(p.type==='video'){
       const isB64 = p.src && p.src.startsWith('data:');
+      const rawThumbUrl = p.src || p.vid || '';
+      const vThumb = isB64 ? p.src : getCloudinaryThumb(rawThumbUrl, 400, imgH);
       const vidSrc = p.vid || p.src;
-      let rawThumb = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv)/i)) ? p.src : vidSrc;
-      const vThumb = isB64 ? p.src : getCloudinaryThumb(rawThumb, 400, imgH);
       media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)">
         <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video>
         ${vThumb ? `<img class="vid-thumb" src="${vThumb}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none'">` : ''}
@@ -2812,8 +2809,6 @@ async function submitPin(){
     }
   }
 
-  np._isNew = true; // Mark as freshly uploaded
-  np._uploadTime = Date.now();
   PIN_DATA.unshift(np);
   upFile = null;
   closeUpload();
@@ -2821,8 +2816,6 @@ async function submitPin(){
   updateUploadPill('✅ ' + np.title + ' — Upload ho gayi!', 100);
   setTimeout(() => hidePill(), 4000);
   applyFilters();
-  // Scroll to top to show new post
-  window.scrollTo({ top: 0, behavior: 'smooth' });
   const pp = document.getElementById('profilePage');
   if (pp && pp.classList.contains('open')) openUserProfile();
   if(pubBtn){pubBtn.disabled=false;pubBtn.textContent='🚀 Publish';}
@@ -3188,33 +3181,26 @@ const _lastPinObs = new IntersectionObserver(entries=>{
     // ✅ Cloudinary thumbnail helper
     function _thumb(url, w, h) {
       if (!url || url.startsWith('data:')) return '';
-      if (url.match(/\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i) && !url.includes('/video/')) {
+      if (url.match(/\.(jpg|jpeg|png|webp)(\?.*)?$/i) && !url.includes('/video/')) {
         return url.includes('?') ? url+`&w=${w}&h=${h}&fit=crop` : url+`?w=${w}&h=${h}&fit=crop`;
       }
-      if (url.includes('res.cloudinary.com')) {
+      if (url.includes('res.cloudinary.com') && (url.includes('/video/') || url.match(/\.(mp4|mov|webm|avi)/i))) {
         const base = url.split('/upload/');
         if (base.length === 2) {
-          const hasVersion = base[1].match(/^v\d+\//);
-          const versionPart = hasVersion ? hasVersion[0] : '';
-          const filePart = base[1].replace(/^v?\d*\/?/, '').replace(/\.(mp4|mov|webm|avi|mkv|m4v)(\?.*)?$/i, '.jpg');
-          return `${base[0]}/upload/so_1,w_${w},h_${h},c_fill,q_auto,f_jpg/${versionPart}${filePart}`;
+          const filename = base[1].replace(/\.(mp4|mov|webm|avi|mkv)(\?.*)?$/i, '.jpg');
+          return `${base[0]}/upload/so_0,w_${w},h_${h},c_fill,q_auto,f_jpg/${filename}`;
         }
       }
       return url.includes('?') ? url+`&w=${w}&h=${h}&auto=format&fit=crop` : url+`?w=${w}&h=${h}&auto=format&fit=crop`;
     }
 
     if(p.type==='reel'){
-      const isB64s = p.src && p.src.startsWith('data:');
+      const ts = isB64s ? p.src : _thumb(p.src || p.vid, 400, 711);
       const vs = p.vid || p.src || '';
-      const rawT = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv)/i)) ? p.src : vs;
-      const ts = isB64s ? p.src : _thumb(rawT, 400, 711);
       media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">${ts?`<img class="reel-thumb" src="${ts}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">`:''}<video id="rv${p.id}" src="${vs}" muted loop playsinline preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video><div class="reel-badge">🎬 Reel</div><div class="reel-dur">▶ 0:${String(15+p.id%45).padStart(2,'0')}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
     } else if(p.type==='video'){
-      const isB64s2 = p.src && p.src.startsWith('data:');
-      const vs2 = p.vid || p.src;
-      const rawT2 = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv)/i)) ? p.src : vs2;
-      const vt = isB64s2 ? p.src : _thumb(rawT2, 400, imgH);
-      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)"><video id="rv${p.id}" src="${vs2}" muted loop playsinline preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video>${vt?`<img class="vid-thumb" src="${vt}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none'">`:''}<div class="video-badge">🎥 Video</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
+      const vt = isB64s ? p.src : _thumb(p.src || p.vid, 400, imgH);
+      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)"><video id="rv${p.id}" src="${p.vid||p.src}" muted loop playsinline preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video>${vt?`<img class="vid-thumb" src="${vt}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none'">`:''}<div class="video-badge">🎥 Video</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
     } else {
       const is = isB64s ? p.src : (p.src && p.src.includes('?') ? p.src+'&auto=format&fit=crop&h='+imgH : (p.src||'')+'?auto=format&fit=crop&h='+imgH);
       media=`<div class="pin-img-wrap"><img src="${is}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" loading="lazy" alt="${p.title}" onerror="this.style.background='#f0f0f0'"></div>`;
@@ -3674,24 +3660,17 @@ function patchPinDoubleTap() {
     // ✅ LONG PRESS — mobile pe delete option
     let longPressTimer = null;
     pinEl.addEventListener('touchstart', (e) => {
-      if (e.target.closest('button') || e.target.closest('.pin-overlay')) return;
       longPressTimer = setTimeout(() => {
         const p = PIN_DATA.find(x => x.id === id);
-        if (!p) return;
-        // Dynamic check — myClickPinName runtime mein check karo
-        const myName = myClickPinName || localStorage.getItem('cp_user_name') || '';
-        if (!myName) return;
-        if (p.user && p.user.name && p.user.name.toLowerCase() === myName.toLowerCase()) {
-          if (navigator.vibrate) navigator.vibrate([40, 20, 40]);
-          if (confirm(`🗑️ "${p.title}" delete karna chahte ho?`)) {
+        if (!p || !myClickPinName) return;
+        if (p.user && p.user.name && p.user.name.toLowerCase() === myClickPinName.toLowerCase()) {
+          if (navigator.vibrate) navigator.vibrate([40]);
+          // Delete confirm
+          if (confirm(`"${p.title}" delete karna chahte ho?`)) {
             deletePin(new Event('touch'), id);
           }
-        } else {
-          // Not own post - show options
-          if (navigator.vibrate) navigator.vibrate([20]);
-          toast('📌 Apni post nahi — delete nahi kar sakte');
         }
-      }, 700);
+      }, 700); // 700ms long press
     }, { passive: true });
     pinEl.addEventListener('touchend', () => { clearTimeout(longPressTimer); });
     pinEl.addEventListener('touchmove', () => { clearTimeout(longPressTimer); });
@@ -4810,54 +4789,6 @@ function sanitizeFirestorePost(data) {
 
 console.log('🔒 ClickPin Security System Active');
 
-// ✅ VIDEO BACKGROUND STOP — notification mein play na ho
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    // Page background mein gayi — sab videos pause karo
-    document.querySelectorAll('video').forEach(v => {
-      if (!v.paused) {
-        v.pause();
-        v.dataset.wasPlaying = '1';
-      }
-    });
-    // MediaSession clear karo — notification mein na dikhe
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = 'none';
-      try {
-        navigator.mediaSession.metadata = null;
-      } catch(e) {}
-    }
-  }
-  // Page wapas aai — koi auto-resume mat karo
-});
-
-// Reels close hone pe bhi sab band karo
-const _origCloseReels = closeReels;
-function closeReels() {
-  document.querySelectorAll('.rs-slide video, #reelsView video').forEach(v => {
-    v.pause();
-    v.src = '';
-    v.load();
-  });
-  if ('mediaSession' in navigator) {
-    navigator.mediaSession.playbackState = 'none';
-    try { navigator.mediaSession.metadata = null; } catch(e) {}
-  }
-  _origCloseReels();
-}
-
-// Detail modal close pe video band karo
-const _origCloseDetail = closeDetail;
-function closeDetail() {
-  const dv = document.getElementById('detailVideo');
-  if (dv) { dv.pause(); dv.src = ''; dv.load(); }
-  if ('mediaSession' in navigator) {
-    navigator.mediaSession.playbackState = 'none';
-    try { navigator.mediaSession.metadata = null; } catch(e) {}
-  }
-  _origCloseDetail();
-}
-
 // ─── INIT ───
 CATS.filter(c=>c!=='Sab').forEach(c=>{
   const o=document.createElement('option');o.value=c;o.textContent=c;
@@ -5556,7 +5487,7 @@ async function loadAllPostsFromFirestore() {
           ? sd.userAvatar
           : `https://i.pravatar.cc/60?img=${Math.floor(Math.random()*70)+1}`;
 
-        const newPost = {
+        PIN_DATA.unshift({
           id              : sd.id || Date.now() + Math.random(),
           firestoreId     : doc.id,
           firestoreUserId : sd.userId || '',
@@ -5572,18 +5503,7 @@ async function loadAllPostsFromFirestore() {
             avatar   : safeAvatar,
             followers: '0'
           }
-        };
-        // ✅ Fresh (abhi uploaded) posts ke upar mat jaao — unshift sirf purane posts ke liye
-        // Naye posts seedhe end mein push karo taaki fresh upload top pe rahe
-        const hasFreshPost = PIN_DATA.some(p => p._isNew && Date.now() - (p._uploadTime||0) < 60000);
-        if (hasFreshPost) {
-          // Fresh post ke baad insert karo
-          const freshIdx = PIN_DATA.findIndex(p => !p._isNew);
-          if (freshIdx > 0) PIN_DATA.splice(freshIdx, 0, newPost);
-          else PIN_DATA.push(newPost);
-        } else {
-          PIN_DATA.unshift(newPost);
-        }
+        });
         added++;
       }
     });
