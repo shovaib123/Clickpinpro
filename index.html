@@ -1861,41 +1861,24 @@ function pushHistory(state) {
 }
 
 window.addEventListener('popstate', (e) => {
-  // Koi modal/page open hai to band karo aur naya state push karo
-  if (document.getElementById('reelsView').classList.contains('open')) {
-    closeReels(); pushHistory('home'); return;
-  }
-  if (document.getElementById('detailModal').classList.contains('open')) {
-    closeDetail(); pushHistory('home'); return;
-  }
-  if (document.getElementById('settingsPage').classList.contains('open')) {
-    closeSettings(); pushHistory('profile'); return;
-  }
-  if (document.getElementById('profilePage').classList.contains('open')) {
-    closeUserProfile(); setBn('home'); pushHistory('home'); return;
-  }
-  if (document.getElementById('inboxPage').classList.contains('open')) {
-    closeInbox(); setBn('home'); pushHistory('home'); return;
-  }
-  if (document.getElementById('boardDetailPage').classList.contains('open')) {
-    closeBoardDetail(); pushHistory('boards'); return;
-  }
-  if (document.getElementById('boardsPage').classList.contains('open')) {
-    closeBoards(); pushHistory('home'); return;
-  }
-  if (document.getElementById('shareModal').classList.contains('open')) {
-    closeShare(); pushHistory('home'); return;
-  }
-  if (document.getElementById('commentsDrawer').classList.contains('open')) {
-    closeComments(); pushHistory('home'); return;
-  }
-  if (document.getElementById('uploadModal').classList.contains('open')) {
-    closeUpload(); pushHistory('home'); return;
-  }
-  if (document.getElementById('createSheetOverlay').classList.contains('open')) {
-    closeCreateSheet(); pushHistory('home'); return;
-  }
-  // Koi bhi open nahi — home
+  const isOpen = (id) => { const el = document.getElementById(id); return el && el.classList.contains('open'); };
+  const isVisible = (id) => { const el = document.getElementById(id); return el && (el.style.display === 'flex' || el.style.display === 'block'); };
+
+  if (isOpen('reelsView'))        { closeReels();       pushHistory('home');    return; }
+  if (isOpen('detailModal'))      { closeDetail();      pushHistory('home');    return; }
+  if (isOpen('settingsPage'))     { closeSettings();    pushHistory('profile'); return; }
+  if (isOpen('profilePage'))      { closeUserProfile(); setBn('home'); pushHistory('home'); return; }
+  if (isOpen('inboxPage'))        { closeInbox();       setBn('home'); pushHistory('home'); return; }
+  if (isOpen('boardDetailPage'))  { closeBoardDetail(); pushHistory('boards');  return; }
+  if (isOpen('boardsPage'))       { closeBoards();      pushHistory('home');    return; }
+  if (isOpen('shareModal'))       { closeShare();       pushHistory('home');    return; }
+  if (isOpen('commentsDrawer'))   { closeComments();    pushHistory('home');    return; }
+  if (isOpen('uploadModal'))      { closeUpload();      pushHistory('home');    return; }
+  if (isOpen('createSheetOverlay')){ closeCreateSheet(); pushHistory('home');   return; }
+  // Floating delete sheet
+  const delSheet = document.getElementById('_delSheet');
+  if (delSheet) { delSheet.remove(); pushHistory('home'); return; }
+  // Koi bhi nahi — home
   showHome();
 });
 
@@ -1925,36 +1908,31 @@ function _realBuildGrid(list){
     // ✅ Cloudinary video URL se thumbnail URL banao
     function getCloudinaryThumb(url, w, h) {
       if (!url || url.startsWith('data:')) return '';
-      // Already a static image — return with resize params
+      // Already a static image
       if (url.match(/\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i) && !url.includes('/video/')) {
         return url.includes('?') ? url + `&w=${w}&h=${h}&fit=crop` : url + `?w=${w}&h=${h}&fit=crop`;
       }
-      // Cloudinary video URL → extract thumbnail using so_1 (1 second frame)
+      // Cloudinary video → thumbnail
       if (url.includes('res.cloudinary.com')) {
-        const base = url.split('/upload/');
-        if (base.length === 2) {
-          // Remove any existing transformations
-          const rawPath = base[1].replace(/^[^/]+\//, ''); // strip version like v123456/
-          const hasVersion = base[1].match(/^v\d+\//);
-          const versionPart = hasVersion ? hasVersion[0] : '';
-          const filePart = base[1].replace(/^v?\d*\/?/, '').replace(/\.(mp4|mov|webm|avi|mkv|m4v)(\?.*)?$/i, '.jpg');
-          return `${base[0]}/upload/so_1,w_${w},h_${h},c_fill,q_auto,f_jpg/${versionPart}${filePart}`;
+        const parts = url.split('/upload/');
+        if (parts.length === 2) {
+          const hasVer = parts[1].match(/^v\d+\//);
+          const ver = hasVer ? hasVer[0] : '';
+          const file = parts[1].replace(/^v?\d*\/?/, '').replace(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)(\?.*)?$/i, '.jpg');
+          return `${parts[0]}/upload/so_1,w_${w},h_${h},c_fill,q_auto,f_jpg/${ver}${file}`;
         }
       }
-      // Unsplash or other image URL
       if (url.includes('?')) return url + `&w=${w}&h=${h}&auto=format&fit=crop`;
       return url + `?w=${w}&h=${h}&auto=format&fit=crop`;
     }
 
     if(p.type==='reel'){
       const isB64 = p.src && p.src.startsWith('data:');
-      // vid = actual video URL, src = thumbnail (may also be video URL for old posts)
       const vidSrc = p.vid || p.src || '';
-      // For thumbnail: prefer src if it's already a jpg, else generate from vid
-      let rawThumb = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv)/i)) ? p.src : vidSrc;
+      const rawThumb = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)/i)) ? p.src : vidSrc;
       const thumbSrc = isB64 ? p.src : getCloudinaryThumb(rawThumb, 400, 711);
       media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">
-        ${thumbSrc ? `<img class="reel-thumb" src="${thumbSrc}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none'">` : ''}
+        ${thumbSrc ? `<img class="reel-thumb" src="${thumbSrc}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none';setTimeout(()=>{this.src=this.src+'?r='+Date.now();this.style.display='block'},3000)">` : ''}
         <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video>
         <div class="reel-badge">🎬 Reel</div>
         <div class="reel-dur">▶ 0:${String(15+p.id%45).padStart(2,'0')}</div>
@@ -1963,11 +1941,11 @@ function _realBuildGrid(list){
     } else if(p.type==='video'){
       const isB64 = p.src && p.src.startsWith('data:');
       const vidSrc = p.vid || p.src;
-      let rawThumb = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv)/i)) ? p.src : vidSrc;
+      const rawThumb = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)/i)) ? p.src : vidSrc;
       const vThumb = isB64 ? p.src : getCloudinaryThumb(rawThumb, 400, imgH);
       media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)">
         <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video>
-        ${vThumb ? `<img class="vid-thumb" src="${vThumb}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none'">` : ''}
+        ${vThumb ? `<img class="vid-thumb" src="${vThumb}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none';setTimeout(()=>{this.src=this.src+'?r='+Date.now();this.style.display='block'},3000)">` : ''}
         <div class="video-badge">🎥 Video</div>
         <div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div>
       </div>`;
@@ -1989,7 +1967,7 @@ function _realBuildGrid(list){
       <div class="pin-overlay">
         <div class="overlay-top">
           <button class="save-btn${savedSet.has(p.id)?' saved':''}" onclick="tgSave(event,${p.id})">${savedSet.has(p.id)?'✔ Saved':'Save'}</button>
-          ${(p.user && p.user.name && myClickPinName && p.user.name.toLowerCase() === myClickPinName.toLowerCase()) ? `<button class="ov-btn" onclick="deletePin(event,${p.id})" title="Delete" style="background:rgba(220,38,38,.9);color:#fff;font-size:16px">🗑️</button>` : ''}
+          <button class="ov-btn del-btn" data-owner="${(p.user&&p.user.name)||''}" onclick="deletePin(event,${p.id})" title="Delete" style="background:rgba(220,38,38,.9);color:#fff;font-size:16px;display:none">🗑️</button>
         </div>
         <div class="overlay-bottom">
           ${p.type!=='image'?`<button class="ov-btn" onclick="openReels(event,${p.id})" title="Reels mein dekho">🎬</button>`:''}
@@ -2009,7 +1987,7 @@ function _realBuildGrid(list){
   });
   el.innerHTML=cards.join('');
   // Hook scroll-based autoplay after render
-  setTimeout(()=>{ observeVideoPins(); },100);
+  setTimeout(()=>{ observeVideoPins(); refreshDeleteButtons(); },100);
   } catch(e) { console.error('Grid render error:', e); }
 }
 // applyFilters moved to new infinite scroll version below
@@ -2418,7 +2396,24 @@ async function saveFollowNotification() {
   } catch(e) { console.log('Notification save fail:', e.message); }
 }
 
-// ── DELETE PIN ──
+// ✅ DELETE BUTTONS — login ke baad apni posts pe show karo
+function refreshDeleteButtons() {
+  const myName = (myClickPinName || localStorage.getItem('cp_user_name') || '').toLowerCase().trim();
+  if (!myName) return;
+  document.querySelectorAll('.del-btn[data-owner]').forEach(btn => {
+    const owner = (btn.dataset.owner || '').toLowerCase().trim();
+    btn.style.display = owner === myName ? 'flex' : 'none';
+  });
+}
+
+// Profile page mein bhi delete buttons dikhao
+function refreshProfileDeleteButtons() {
+  refreshDeleteButtons();
+  // Profile grid ke cards mein bhi
+  document.querySelectorAll('#profilePinsGrid .pin-card-del').forEach(btn => {
+    btn.style.display = 'flex';
+  });
+}
 async function deletePin(e, id) {
   e.stopPropagation();
   const p = PIN_DATA.find(x => x.id === id);
@@ -2586,20 +2581,34 @@ const CLOUDINARY_PRESET = 'clickpin_unsigned';
 let upFile = null; // actual file object store karo
 
 function handleFileSelect(inp){
-  const f=inp.files[0];if(!f)return;
-  upFile = f; // file save karo Cloudinary upload ke liye
-  const isVid=f.type.startsWith('video');if(isVid&&upType==='image')upType='video';
+  const f=inp.files[0]; if(!f) return;
+  upFile = f;
+  const ext = (f.name||'').split('.').pop().toLowerCase();
+  const isVid = f.type.startsWith('video') || ['mp4','mov','webm','avi','mkv','m4v','3gp'].includes(ext);
+  if(isVid && upType==='image') upType='video';
   const r=new FileReader();
-  r.onload=ev=>{upData=ev.target.result;
-    if(isVid){document.getElementById('uploadVideoPreview').src=upData;document.getElementById('uploadVideoPreview').style.display='block';document.getElementById('uploadPreviewImg').style.display='none';}
-    else{document.getElementById('uploadPreviewImg').src=upData;document.getElementById('uploadPreviewImg').style.display='block';document.getElementById('uploadVideoPreview').style.display='none';}
+  r.onload=ev=>{
+    upData=ev.target.result;
+    if(isVid){
+      document.getElementById('uploadVideoPreview').src=upData;
+      document.getElementById('uploadVideoPreview').style.display='block';
+      document.getElementById('uploadPreviewImg').style.display='none';
+    } else {
+      document.getElementById('uploadPreviewImg').src=upData;
+      document.getElementById('uploadPreviewImg').style.display='block';
+      document.getElementById('uploadVideoPreview').style.display='none';
+    }
     document.getElementById('dropzone').style.display='none';
-  };r.readAsDataURL(f);
+  };
+  r.readAsDataURL(f);
 }
 
 // Cloudinary pe upload karo — heavily compressed for speed
 async function uploadToCloudinary(file) {
-  const isVideo = file.type.startsWith('video');
+  // ✅ Android pe MIME type empty hota hai — extension se detect karo
+  const ext = (file.name || '').split('.').pop().toLowerCase();
+  const isVideo = file.type.startsWith('video') ||
+    ['mp4','mov','webm','avi','mkv','m4v','3gp'].includes(ext);
   let uploadFile = file;
 
   if (!isVideo) {
@@ -2612,10 +2621,9 @@ async function uploadToCloudinary(file) {
   formData.append('upload_preset', CLOUDINARY_PRESET);
 
   const CLOUD = CLOUDINARY_CLOUD;
-  // ✅ Video ke liye /video/upload, image ke liye /image/upload
   const resourceType = isVideo ? 'video' : 'image';
   const sizeMB = (uploadFile.size / (1024 * 1024)).toFixed(1);
-  toast('📤 Cloudinary pe upload ho raha hai... ' + sizeMB + 'MB');
+  toast('📤 Upload ho raha hai... ' + sizeMB + 'MB');
 
   let res;
   try {
@@ -3219,12 +3227,12 @@ const _lastPinObs = new IntersectionObserver(entries=>{
         return url.includes('?') ? url+`&w=${w}&h=${h}&fit=crop` : url+`?w=${w}&h=${h}&fit=crop`;
       }
       if (url.includes('res.cloudinary.com')) {
-        const base = url.split('/upload/');
-        if (base.length === 2) {
-          const hasVersion = base[1].match(/^v\d+\//);
-          const versionPart = hasVersion ? hasVersion[0] : '';
-          const filePart = base[1].replace(/^v?\d*\/?/, '').replace(/\.(mp4|mov|webm|avi|mkv|m4v)(\?.*)?$/i, '.jpg');
-          return `${base[0]}/upload/so_1,w_${w},h_${h},c_fill,q_auto,f_jpg/${versionPart}${filePart}`;
+        const parts = url.split('/upload/');
+        if (parts.length === 2) {
+          const hasVer = parts[1].match(/^v\d+\//);
+          const ver = hasVer ? hasVer[0] : '';
+          const file = parts[1].replace(/^v?\d*\/?/, '').replace(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)(\?.*)?$/i, '.jpg');
+          return `${parts[0]}/upload/so_1,w_${w},h_${h},c_fill,q_auto,f_jpg/${ver}${file}`;
         }
       }
       return url.includes('?') ? url+`&w=${w}&h=${h}&auto=format&fit=crop` : url+`?w=${w}&h=${h}&auto=format&fit=crop`;
@@ -3233,15 +3241,15 @@ const _lastPinObs = new IntersectionObserver(entries=>{
     if(p.type==='reel'){
       const isB64s = p.src && p.src.startsWith('data:');
       const vs = p.vid || p.src || '';
-      const rawT = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv)/i)) ? p.src : vs;
+      const rawT = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)/i)) ? p.src : vs;
       const ts = isB64s ? p.src : _thumb(rawT, 400, 711);
-      media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">${ts?`<img class="reel-thumb" src="${ts}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">`:''}<video id="rv${p.id}" src="${vs}" muted loop playsinline preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video><div class="reel-badge">🎬 Reel</div><div class="reel-dur">▶ 0:${String(15+p.id%45).padStart(2,'0')}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
+      media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">${ts?`<img class="reel-thumb" src="${ts}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onerror="this.style.display='none';setTimeout(()=>{this.src=this.src+'?r='+Date.now();this.style.display='block'},3000)">`:''}<video id="rv${p.id}" src="${vs}" muted loop playsinline preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video><div class="reel-badge">🎬 Reel</div><div class="reel-dur">▶ 0:${String(15+p.id%45).padStart(2,'0')}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
     } else if(p.type==='video'){
       const isB64s2 = p.src && p.src.startsWith('data:');
       const vs2 = p.vid || p.src;
-      const rawT2 = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv)/i)) ? p.src : vs2;
+      const rawT2 = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)/i)) ? p.src : vs2;
       const vt = isB64s2 ? p.src : _thumb(rawT2, 400, imgH);
-      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)"><video id="rv${p.id}" src="${vs2}" muted loop playsinline preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video>${vt?`<img class="vid-thumb" src="${vt}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none'">`:''}<div class="video-badge">🎥 Video</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
+      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)"><video id="rv${p.id}" src="${vs2}" muted loop playsinline preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video>${vt?`<img class="vid-thumb" src="${vt}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none';setTimeout(()=>{this.src=this.src+'?r='+Date.now();this.style.display='block'},3000)">`:''}<div class="video-badge">🎥 Video</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
     } else {
       const is = isB64s ? p.src : (p.src && p.src.includes('?') ? p.src+'&auto=format&fit=crop&h='+imgH : (p.src||'')+'?auto=format&fit=crop&h='+imgH);
       media=`<div class="pin-img-wrap"><img src="${is}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" loading="lazy" alt="${p.title}" onerror="this.style.background='#f0f0f0'"></div>`;
@@ -3251,10 +3259,10 @@ const _lastPinObs = new IntersectionObserver(entries=>{
     card.setAttribute('onclick',`openDetail(${p.id})`);
     card.setAttribute('onmouseenter',`hoverPlay(${p.id})`);
     card.setAttribute('onmouseleave',`hoverStop(${p.id})`);
-    card.innerHTML=media+`<div class="pin-overlay"><div class="overlay-top"><button class="save-btn${savedSet.has(p.id)?' saved':''}" onclick="tgSave(event,${p.id})">${savedSet.has(p.id)?'✔ Saved':'Save'}</button>${(p.user && p.user.name && myClickPinName && p.user.name.toLowerCase()===myClickPinName.toLowerCase())?`<button class="ov-btn" onclick="deletePin(event,${p.id})" title="Delete" style="background:rgba(220,38,38,.9);color:#fff;font-size:16px">🗑️</button>`:''}</div><div class="overlay-bottom">${p.type!=='image'?`<button class="ov-btn" onclick="openReels(event,${p.id})">🎬</button>`:''}<button class="ov-btn" onclick="openShareFor(event,${p.id})">📤</button><button class="ov-btn" onclick="dlPin(event,${p.id})">⬇️</button></div></div><button class="note-icon-btn" onclick="openNoteModal(event,${p.id})" title="Note">📝</button>${pinNotes[p.id]?'<div class="note-dot"></div>':''}<button class="vsearch-btn" onclick="openVSearch(event,${p.id})" title="Visual search">🔍</button><div class="pin-info"><div class="pin-title">${p.title}</div></div><div class="pin-meta"><div class="pin-user"><img src="${p.user.avatar}" alt="${p.user.name}"><span>${p.user.name}</span></div><span class="pin-likes">❤️ ${p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes}</span></div>`;
+    card.innerHTML=media+`<div class="pin-overlay"><div class="overlay-top"><button class="save-btn${savedSet.has(p.id)?' saved':''}" onclick="tgSave(event,${p.id})">${savedSet.has(p.id)?'✔ Saved':'Save'}</button><button class="ov-btn del-btn" data-owner="${(p.user&&p.user.name)||''}" onclick="deletePin(event,${p.id})" title="Delete" style="background:rgba(220,38,38,.9);color:#fff;font-size:16px;display:none">🗑️</button></div><div class="overlay-bottom">${p.type!=='image'?`<button class="ov-btn" onclick="openReels(event,${p.id})">🎬</button>`:''}<button class="ov-btn" onclick="openShareFor(event,${p.id})">📤</button><button class="ov-btn" onclick="dlPin(event,${p.id})">⬇️</button></div></div><button class="note-icon-btn" onclick="openNoteModal(event,${p.id})" title="Note">📝</button>${pinNotes[p.id]?'<div class="note-dot"></div>':''}<button class="vsearch-btn" onclick="openVSearch(event,${p.id})" title="Visual search">🔍</button><div class="pin-info"><div class="pin-title">${p.title}</div></div><div class="pin-meta"><div class="pin-user"><img src="${p.user.avatar}" alt="${p.user.name}"><span>${p.user.name}</span></div><span class="pin-likes">❤️ ${p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes}</span></div>`;
     grid.appendChild(card);
   });
-  setTimeout(()=>observeVideoPins(),50);
+  setTimeout(()=>{ observeVideoPins(); refreshDeleteButtons(); },50);
   // Re-observe last pin
   const pins=grid.querySelectorAll('.pin');
   if(pins.length>0) _lastPinObs.observe(pins[pins.length-1]);
@@ -3698,31 +3706,58 @@ function patchPinDoubleTap() {
       handlePinTap(e, id);
     });
 
-    // ✅ LONG PRESS — mobile pe delete option
+    // ✅ LONG PRESS — delete bottom sheet dikhao
     let longPressTimer = null;
+    let longPressFired = false;
     pinEl.addEventListener('touchstart', (e) => {
-      if (e.target.closest('button') || e.target.closest('.pin-overlay')) return;
+      if (e.target.closest('button')) return;
+      longPressFired = false;
       longPressTimer = setTimeout(() => {
+        longPressFired = true;
         const p = PIN_DATA.find(x => x.id === id);
         if (!p) return;
-        // Dynamic check — myClickPinName runtime mein check karo
-        const myName = myClickPinName || localStorage.getItem('cp_user_name') || '';
-        if (!myName) return;
-        if (p.user && p.user.name && p.user.name.toLowerCase() === myName.toLowerCase()) {
-          if (navigator.vibrate) navigator.vibrate([40, 20, 40]);
-          if (confirm(`🗑️ "${p.title}" delete karna chahte ho?`)) {
-            deletePin(new Event('touch'), id);
-          }
-        } else {
-          // Not own post - show options
-          if (navigator.vibrate) navigator.vibrate([20]);
-          toast('📌 Apni post nahi — delete nahi kar sakte');
-        }
-      }, 700);
+        if (navigator.vibrate) navigator.vibrate([30, 10, 30]);
+        showDeleteSheet(id);
+      }, 600);
     }, { passive: true });
     pinEl.addEventListener('touchend', () => { clearTimeout(longPressTimer); });
     pinEl.addEventListener('touchmove', () => { clearTimeout(longPressTimer); });
   });
+}
+
+// ✅ FLOATING DELETE SHEET — long press ke baad dikhao
+function showDeleteSheet(id) {
+  const p = PIN_DATA.find(x => x.id === id);
+  if (!p) return;
+  const myName = (myClickPinName || localStorage.getItem('cp_user_name') || '').toLowerCase().trim();
+  const isOwn = p.user && p.user.name && p.user.name.toLowerCase().trim() === myName;
+
+  // Purani sheet hato
+  const old = document.getElementById('_delSheet');
+  if (old) old.remove();
+
+  const sheet = document.createElement('div');
+  sheet.id = '_delSheet';
+  sheet.style.cssText = `position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;justify-content:flex-end;background:rgba(0,0,0,.5)`;
+  sheet.innerHTML = `
+    <div style="background:#fff;border-radius:24px 24px 0 0;padding:20px;animation:slideUp .25s ease">
+      <div style="width:40px;height:4px;background:#e0e0e0;border-radius:99px;margin:0 auto 16px"></div>
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">
+        <img src="${p.src && !p.src.startsWith('data:') ? p.src+'?w=60' : (p.src||'')}" style="width:52px;height:52px;border-radius:10px;object-fit:cover;background:#f0f0f0">
+        <div>
+          <div style="font-weight:700;font-size:14px">${p.title}</div>
+          <div style="font-size:12px;color:#888">by ${p.user.name}</div>
+        </div>
+      </div>
+      ${isOwn ? `
+      <button onclick="document.getElementById('_delSheet').remove();deletePin(new Event('x'),${id})" style="width:100%;padding:14px;background:#dc2626;color:#fff;border:none;border-radius:14px;font-size:15px;font-weight:700;margin-bottom:8px;cursor:pointer">🗑️ Delete karo</button>
+      ` : ''}
+      <button onclick="document.getElementById('_delSheet').remove();openShareFor(new Event('x'),${id})" style="width:100%;padding:14px;background:#f5f5f5;color:#333;border:none;border-radius:14px;font-size:15px;font-weight:600;margin-bottom:8px;cursor:pointer">📤 Share karo</button>
+      <button onclick="document.getElementById('_delSheet').remove();tgSave(new Event('x'),${id})" style="width:100%;padding:14px;background:#f5f5f5;color:#333;border:none;border-radius:14px;font-size:15px;font-weight:600;margin-bottom:8px;cursor:pointer">🔖 Save karo</button>
+      <button onclick="document.getElementById('_delSheet').remove()" style="width:100%;padding:12px;background:none;color:#888;border:none;font-size:14px;cursor:pointer">Hata do</button>
+    </div>`;
+  sheet.addEventListener('click', (e) => { if (e.target === sheet) sheet.remove(); });
+  document.body.appendChild(sheet);
 }
 
 // ══════════════════════════════════════════════
@@ -4706,12 +4741,20 @@ function doLogin() {
 // ── 5. COMMENT / POST SPAM PROTECTION ──
 const _origPostComment = postComment;
 function postComment() {
-  if (!rateLimitCheck('comment', 5)) return; // max 5 comments per minute
+  if (!rateLimitCheck('comment', 5)) return;
   const inp = document.getElementById('commentInput');
   const text = inp ? inp.value.trim() : '';
   if (!validateText(text, 300)) {
     toast('⚠️ Comment mein invalid text hai!');
     return;
+  }
+  // ✅ Adult content in comments
+  if (typeof checkAdultContent === 'function') {
+    const ac = checkAdultContent(text, '', '');
+    if (ac.blocked) {
+      toast('🚫 Ye comment allowed nahi hai!');
+      return;
+    }
   }
   _origPostComment();
 }
@@ -4747,13 +4790,23 @@ function handleFileSelect(inp) {
     return;
   }
 
+  // ✅ ADULT CONTENT — filename check
+  if (typeof checkAdultContent === 'function') {
+    const check = checkAdultContent('', '', f.name);
+    if (check.blocked) {
+      toast('🚫 Ye content ClickPin pe allowed nahi hai!');
+      inp.value = '';
+      return;
+    }
+  }
+
   _origHandleFileSelect(inp);
 }
 
 // ── 7. SUBMIT PIN VALIDATION ──
 const _origSubmitPin = submitPin;
 async function submitPin() {
-  if (!rateLimitCheck('upload', 3)) return; // max 3 uploads per minute
+  if (!rateLimitCheck('upload', 3)) return;
   const title = document.getElementById('pinTitle')?.value?.trim() || '';
   if (!validateTitle(title)) {
     toast('⚠️ Title mein invalid characters hain!');
@@ -4764,6 +4817,15 @@ async function submitPin() {
     toast('⚠️ Description mein invalid text hai!');
     return;
   }
+
+  // ✅ ADULT CONTENT CHECK — title + desc
+  const filename = (window.upFile && window.upFile.name) || '';
+  const adultCheck = checkAdultContent(title, desc, filename);
+  if (adultCheck.blocked) {
+    toast('🚫 ' + adultCheck.reason + ' ClickPin family-friendly platform hai.');
+    return;
+  }
+
   await _origSubmitPin();
 }
 
@@ -4848,6 +4910,41 @@ function sanitizeFirestorePost(data) {
 
 console.log('🔒 ClickPin Security System Active');
 
+// ── 11. ADULT CONTENT FILTER ──
+// Gandi/adult content upload hone se rokna
+
+const _ADULT_KEYWORDS = [
+  // Explicit terms (English)
+  'porn','porno','pornography','xxx','sex','sexy','nude','naked','nsfw',
+  'adult','erotic','explicit','hentai','onlyfans','18+','hottest',
+  // Explicit terms (Hindi/Urdu transliterated)
+  'chudai','bhosdike','madarchod','bhenchod','gaand','lund','chut',
+  'nangi','nanga','sexy video','hot video','mujra','randi','randi dance',
+  'blue film','b grade','adult video','gandi video','sexy girl',
+  'hot girl','nude girl','boobs','breast','pussy','dick','cock','penis',
+  // Common adult content filenames
+  'xvideos','xhamster','pornhub','redtube','youporn','xnxx'
+];
+
+function _containsAdultContent(text) {
+  if (!text) return false;
+  const lower = text.toLowerCase().replace(/[\s_\-\.]+/g, ' ');
+  return _ADULT_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+// Filename check karo
+function _checkFilename(filename) {
+  return _containsAdultContent(filename || '');
+}
+
+// Title + desc + filename check
+function checkAdultContent(title, desc, filename) {
+  if (_containsAdultContent(title)) return { blocked: true, reason: 'Title mein inappropriate content hai!' };
+  if (_containsAdultContent(desc))  return { blocked: true, reason: 'Description mein inappropriate content hai!' };
+  if (_checkFilename(filename))     return { blocked: true, reason: 'File name inappropriate hai!' };
+  return { blocked: false };
+}
+
 // ✅ VIDEO BACKGROUND STOP — notification mein play na ho
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
@@ -4887,13 +4984,19 @@ function closeReels() {
 // Detail modal close pe video band karo
 const _origCloseDetail = closeDetail;
 function closeDetail() {
-  const dv = document.getElementById('detailVideo');
-  if (dv) { dv.pause(); dv.src = ''; dv.load(); }
-  if ('mediaSession' in navigator) {
-    navigator.mediaSession.playbackState = 'none';
-    try { navigator.mediaSession.metadata = null; } catch(e) {}
-  }
-  _origCloseDetail();
+  try {
+    const dv = document.getElementById('detailVideo');
+    if (dv) { dv.pause(); dv.src = ''; dv.load(); }
+    // Stop all videos in detail
+    document.querySelectorAll('#detailModal video').forEach(v => { v.pause(); v.src = ''; });
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'none';
+      try { navigator.mediaSession.metadata = null; } catch(e) {}
+    }
+  } catch(e) {}
+  // Force close the modal
+  const modal = document.getElementById('detailModal');
+  if (modal) modal.classList.remove('open');
 }
 
 // ─── INIT ───
@@ -5590,6 +5693,12 @@ async function loadAllPostsFromFirestore() {
 
       const exists = PIN_DATA.some(p => p.firestoreId === doc.id);
       if (!exists) {
+        // ✅ Adult content Firestore se bhi block karo
+        if (typeof checkAdultContent === 'function') {
+          const ac = checkAdultContent(sd.title || '', sd.desc || '', '');
+          if (ac.blocked) return;
+        }
+
         const safeAvatar = (sd.userAvatar && sd.userAvatar.startsWith('http'))
           ? sd.userAvatar
           : `https://i.pravatar.cc/60?img=${Math.floor(Math.random()*70)+1}`;
@@ -5740,6 +5849,8 @@ function cpUpdateAuthUI(user) {
     if (user.cpid) { myClickPinId = user.cpid; localStorage.setItem('cp_user_id', user.cpid); }
     const adminBtn = document.getElementById('adminPanelBtn');
     if (adminBtn) adminBtn.style.display = (user.email === ADMIN_EMAIL) ? 'flex' : 'none';
+    // ✅ Login ke baad delete buttons dikhao
+    setTimeout(refreshDeleteButtons, 500);
   } else {
     // ✅ Logout — sab reset karo
     authBtns.style.display = 'flex';
@@ -5891,14 +6002,27 @@ function cpLogout() {
     localStorage.removeItem('cp_current_user');
     localStorage.removeItem('cp_user_name');
     localStorage.removeItem('cp_user_id');
-    localStorage.removeItem('cp_avatar');       // ✅ Avatar bhi clear karo
+    localStorage.removeItem('cp_avatar');
     localStorage.removeItem('cp_bio');
     localStorage.removeItem('cp_follows');
-    // Avatar button reset karo
+    localStorage.removeItem('cp_followers');
+
+    // Avatar button reset
     const btn = document.getElementById('avatarBtn');
     if (btn) { btn.innerHTML = ''; btn.textContent = 'U'; }
     const aw = document.getElementById('avatarMenuWrap');
     if (aw) aw.classList.remove('open');
+
+    // Profile page reset — sab clear karo
+    const pName = document.getElementById('profileName');
+    const pHandle = document.getElementById('profileHandle');
+    const pAvImg = document.getElementById('profileAvImg');
+    const pBio = document.getElementById('profileBio');
+    if (pName) pName.textContent = 'ClickPin User';
+    if (pHandle) pHandle.textContent = '@user';
+    if (pAvImg) pAvImg.src = 'https://i.pravatar.cc/120?img=1';
+    if (pBio) pBio.textContent = '';
+
     closeSettings();
     cpUpdateAuthUI(null);
     toast('👋 Logout ho gaya!');
