@@ -1541,6 +1541,7 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
         <button class="detail-share" onclick="openShareFromDetail()">📤 Share</button>
         <button class="detail-download-btn" onclick="dlFromDetail()">⬇️ Download</button>
         <button class="detail-download-btn" onclick="saveToBoard(openPinId)" style="background:#fef9c3;border:1px solid #fde68a;color:#92400e">📂 Collection</button>
+        <button class="detail-download-btn" id="detailDeleteBtn" onclick="deleteFromDetail()" style="background:#fee2e2;border:1px solid #fecaca;color:#dc2626;display:none">🗑️ Delete</button>
         <button class="detail-download-btn" onclick="openNoteModal(new Event('x'),openPinId)" style="background:#f0f8ff;border:1px solid #dbeafe;color:#1e40af">📝 Note</button>
         <button class="detail-download-btn" onclick="openComments(openPinId)" style="background:#f0fff4;border:1px solid #bbf7d0;color:#15803d">💬 <span id="detailCommentCount">0</span></button>
       </div>
@@ -1578,10 +1579,10 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
       <button class="utype-tab"        id="utVideo" onclick="switchUploadType('video',this)">🎥 Video</button>
       <button class="utype-tab"        id="utReel"  onclick="switchUploadType('reel',this)">🎬 Reel (9:16)</button>
     </div>
-    <div class="dropzone" id="dropzone">
-      <input type="file" id="fileInput" accept="image/*" onchange="handleFileSelect(this)">
+    <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+      <input type="file" id="fileInput" accept="image/*,video/*" onchange="handleFileSelect(this)" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
       <div class="dz-icon" id="dzIcon">🖼️</div>
-      <div class="dz-text" id="dzText">Click ya drag &amp; drop</div>
+      <div class="dz-text" id="dzText">Click karo — Photo ya Video chunein</div>
       <div class="dz-sub">Image: PNG JPG WEBP | Video/Reel: MP4 MOV</div>
     </div>
     <img id="uploadPreviewImg" class="upload-preview-img" src="" alt="">
@@ -2114,8 +2115,24 @@ function openDetail(id){
     cmtEl.textContent = stored.length > 0 ? stored.length : '';
   }
 
+  // ✅ Delete button — sirf apni post pe dikhe
+  const delBtn = document.getElementById('detailDeleteBtn');
+  if (delBtn) {
+    const myName = (myClickPinName || localStorage.getItem('cp_user_name') || '').toLowerCase().trim();
+    const postOwner = (p.user && p.user.name) ? p.user.name.toLowerCase().trim() : '';
+    delBtn.style.display = (myName && postOwner === myName) ? 'flex' : 'none';
+  }
+
   // ✅ Followers - Firestore se load karo
   loadFollowersCount(p);
+}
+
+function deleteFromDetail() {
+  if (!openPinId) return;
+  if (confirm('🗑️ Ye post delete karna chahte ho?')) {
+    closeDetail();
+    deletePin(new Event('x'), openPinId);
+  }
 }
 
 // ✅ Followers count Firestore se load karo
@@ -2570,10 +2587,16 @@ function closeUpload(){
 }
 function switchUploadType(tp,btn){
   document.querySelectorAll('.utype-tab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');upType=tp;
-  const isVid=tp!=='image';
-  document.getElementById('fileInput').accept=isVid?'video/*':'image/*';
-  document.getElementById('dzIcon').textContent=tp==='reel'?'🎬':tp==='video'?'🎥':'🖼️';
-  document.getElementById('dzText').textContent=tp==='reel'?'Vertical Reel upload (9:16 format best)':tp==='video'?'Video upload (MP4/MOV)':'Photo upload (PNG/JPG/WEBP)';
+  const isVid = tp!=='image';
+  // Android me image/* or video/* alag karo lekin dono allow karo fallback ke liye
+  document.getElementById('fileInput').accept = isVid ? 'video/*,video/mp4,video/quicktime' : 'image/*,image/jpeg,image/png,image/webp';
+  document.getElementById('dzIcon').textContent = tp==='reel'?'🎬':tp==='video'?'🎥':'🖼️';
+  document.getElementById('dzText').textContent = tp==='reel'?'Vertical Reel chunein (9:16)':tp==='video'?'Video chunein (MP4/MOV)':'Photo chunein (PNG/JPG/WEBP)';
+  // Reset preview
+  document.getElementById('dropzone').style.display='block';
+  document.getElementById('uploadPreviewImg').style.display='none';
+  document.getElementById('uploadVideoPreview').style.display='none';
+  upFile=null; upData=null;
 }
 // ── CLOUDINARY CONFIG ──
 const CLOUDINARY_CLOUD = 'dtmxr5eq7';
@@ -2586,21 +2609,28 @@ function handleFileSelect(inp){
   const ext = (f.name||'').split('.').pop().toLowerCase();
   const isVid = f.type.startsWith('video') || ['mp4','mov','webm','avi','mkv','m4v','3gp'].includes(ext);
   if(isVid && upType==='image') upType='video';
-  const r=new FileReader();
-  r.onload=ev=>{
-    upData=ev.target.result;
-    if(isVid){
-      document.getElementById('uploadVideoPreview').src=upData;
-      document.getElementById('uploadVideoPreview').style.display='block';
-      document.getElementById('uploadPreviewImg').style.display='none';
-    } else {
-      document.getElementById('uploadPreviewImg').src=upData;
-      document.getElementById('uploadPreviewImg').style.display='block';
-      document.getElementById('uploadVideoPreview').style.display='none';
-    }
-    document.getElementById('dropzone').style.display='none';
-  };
-  r.readAsDataURL(f);
+
+  if(isVid){
+    // ✅ Video ke liye blob URL use karo — readAsDataURL bahut slow hai large files ke liye
+    const blobUrl = URL.createObjectURL(f);
+    upData = blobUrl;
+    document.getElementById('uploadVideoPreview').src = blobUrl;
+    document.getElementById('uploadVideoPreview').style.display = 'block';
+    document.getElementById('uploadPreviewImg').style.display = 'none';
+    document.getElementById('dropzone').style.display = 'none';
+    toast('✅ Video ready! Title likho aur Publish karo.');
+  } else {
+    // Image ke liye FileReader use karo
+    const r = new FileReader();
+    r.onload = ev => {
+      upData = ev.target.result;
+      document.getElementById('uploadPreviewImg').src = upData;
+      document.getElementById('uploadPreviewImg').style.display = 'block';
+      document.getElementById('uploadVideoPreview').style.display = 'none';
+      document.getElementById('dropzone').style.display = 'none';
+    };
+    r.readAsDataURL(f);
+  }
 }
 
 // Cloudinary pe upload karo — heavily compressed for speed
@@ -3528,7 +3558,14 @@ function closeComments() {
 function postComment() {
   const inp = document.getElementById('commentInput');
   const text = inp.value.trim();
-  if (!text || !activeCommentPin) return;
+  if (!text) return;
+
+  // ✅ activeCommentPin null hoga toh openPinId se le lo
+  if (!activeCommentPin) {
+    if (openPinId) activeCommentPin = openPinId;
+    else return;
+  }
+
   const id = activeCommentPin;
   if (!commentsDB[id]) commentsDB[id] = [];
 
@@ -3537,7 +3574,7 @@ function postComment() {
 
   const newC = {
     av  : safeAvatar,
-    name: myClickPinName || myClickPinId || 'Aap',
+    name: myClickPinName || myClickPinId || 'Guest',
     text, time: 'Abhi', likes: 0
   };
   commentsDB[id].unshift(newC);
@@ -3547,14 +3584,14 @@ function postComment() {
   _renderComments(id);
   toast('💬 Comment post ho gaya!');
 
-  // ✅ Firestore mein bhi save karo
+  // Firestore mein bhi save karo
   if (db) {
     const p = PIN_DATA.find(x => x.id === id);
     const queryId = (p && p.firestoreId) ? p.firestoreId : String(id);
     db.collection('comments').add({
       pinId    : queryId,
       av       : safeAvatar,
-      name     : myClickPinName || myClickPinId || 'Aap',
+      name     : myClickPinName || myClickPinId || 'Guest',
       text,
       likes    : 0,
       userId   : (fbAuth && fbAuth.currentUser) ? fbAuth.currentUser.uid : '',
@@ -4741,14 +4778,22 @@ function doLogin() {
 // ── 5. COMMENT / POST SPAM PROTECTION ──
 const _origPostComment = postComment;
 function postComment() {
-  if (!rateLimitCheck('comment', 5)) return;
+  // Rate limit check
+  if (!rateLimitCheck('comment', 10)) return; // 10 per minute (relaxed)
+
   const inp = document.getElementById('commentInput');
   const text = inp ? inp.value.trim() : '';
-  if (!validateText(text, 300)) {
+
+  // Empty text — original function mein handle hoga
+  if (!text) { _origPostComment(); return; }
+
+  // Script injection block karo
+  if (/<script|javascript:/i.test(text)) {
     toast('⚠️ Comment mein invalid text hai!');
     return;
   }
-  // ✅ Adult content in comments
+
+  // Adult content check
   if (typeof checkAdultContent === 'function') {
     const ac = checkAdultContent(text, '', '');
     if (ac.blocked) {
@@ -4756,6 +4801,7 @@ function postComment() {
       return;
     }
   }
+
   _origPostComment();
 }
 
@@ -5622,26 +5668,35 @@ function initFirebase() {
         const doc = await db.collection('users').doc(user.uid).get();
         const data = doc.exists ? doc.data() : {};
         const currentUser = {
-          uid: user.uid,
+          uid  : user.uid,
           email: user.email,
-          name: data.name || user.displayName || user.email.split('@')[0],
-          cpid: data.cpid || '@' + user.email.split('@')[0]
+          name : data.name || user.displayName || user.email.split('@')[0],
+          cpid : data.cpid || '@' + user.email.split('@')[0]
         };
         localStorage.setItem('cp_current_user', JSON.stringify(currentUser));
         myClickPinName = currentUser.name;
-        myClickPinId = currentUser.cpid;
+        myClickPinId   = currentUser.cpid;
         localStorage.setItem('cp_user_name', currentUser.name);
-        localStorage.setItem('cp_user_id', currentUser.cpid);
+        localStorage.setItem('cp_user_id',   currentUser.cpid);
+
+        // ✅ Avatar Firestore se load karo — login ke baad sahi DP dikhe
+        if (data.avatar && data.avatar.startsWith('http')) {
+          localStorage.setItem('cp_avatar', data.avatar);
+        } else if (data.bio) {
+          localStorage.setItem('cp_bio', data.bio);
+        }
+        if (data.bio) localStorage.setItem('cp_bio', data.bio);
+
         cpUpdateAuthUI(currentUser);
 
         // Saved posts load karo
         loadSavedFromFirestore(user.uid);
 
-        // Apni posts load karo (agar koi Firestore mein baaki reh gayi ho)
+        // Apni posts load karo
         loadUserPostsFromFirestore(user.uid, currentUser);
         if (user.email) loadUserPostsFromFirestore(user.email, currentUser);
 
-        // ✅ Notifications check karo
+        // Notifications check karo
         setTimeout(() => checkNewNotifications(user.uid), 3000);
 
       } catch(e) {
