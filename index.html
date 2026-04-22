@@ -1580,7 +1580,7 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
       <button class="utype-tab"        id="utReel"  onclick="switchUploadType('reel',this)">🎬 Reel (9:16)</button>
     </div>
     <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
-      <input type="file" id="fileInput" accept="image/*,video/*" onchange="handleFileSelect(this)" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+      <input type="file" id="fileInput" accept="image/*,video/*" onchange="handleFileSelect(this)" style="display:none">
       <div class="dz-icon" id="dzIcon">🖼️</div>
       <div class="dz-text" id="dzText">Click karo — Photo ya Video chunein</div>
       <div class="dz-sub">Image: PNG JPG WEBP | Video/Reel: MP4 MOV</div>
@@ -2119,8 +2119,17 @@ function openDetail(id){
   const delBtn = document.getElementById('detailDeleteBtn');
   if (delBtn) {
     const myName = (myClickPinName || localStorage.getItem('cp_user_name') || '').toLowerCase().trim();
-    const postOwner = (p.user && p.user.name) ? p.user.name.toLowerCase().trim() : '';
-    delBtn.style.display = (myName && postOwner === myName) ? 'flex' : 'none';
+    const myId = (myClickPinId || localStorage.getItem('cp_user_id') || '').replace('@','').toLowerCase().trim();
+    const myUid = fbAuth && fbAuth.currentUser ? fbAuth.currentUser.uid : '';
+    const postOwnerName = (p.user && p.user.name) ? p.user.name.toLowerCase().trim() : '';
+    const postOwnerUid = p.firestoreUserId || '';
+
+    const isOwn = (myName && postOwnerName === myName)
+      || (myId && postOwnerName === myId)
+      || (myUid && postOwnerUid && myUid === postOwnerUid);
+
+    delBtn.style.display = isOwn ? 'flex' : 'none';
+    delBtn.style.alignItems = 'center';
   }
 
   // ✅ Followers - Firestore se load karo
@@ -2604,30 +2613,82 @@ const CLOUDINARY_PRESET = 'clickpin_unsigned';
 let upFile = null; // actual file object store karo
 
 function handleFileSelect(inp){
-  const f=inp.files[0]; if(!f) return;
+  // inp ke files check karo
+  if (!inp || !inp.files || !inp.files[0]) {
+    toast('⚠️ File nahi mili. Dobara select karo.');
+    return;
+  }
+  const f = inp.files[0];
   upFile = f;
-  const ext = (f.name||'').split('.').pop().toLowerCase();
-  const isVid = f.type.startsWith('video') || ['mp4','mov','webm','avi','mkv','m4v','3gp'].includes(ext);
-  if(isVid && upType==='image') upType='video';
 
-  if(isVid){
-    // ✅ Video ke liye blob URL use karo — readAsDataURL bahut slow hai large files ke liye
-    const blobUrl = URL.createObjectURL(f);
-    upData = blobUrl;
-    document.getElementById('uploadVideoPreview').src = blobUrl;
-    document.getElementById('uploadVideoPreview').style.display = 'block';
-    document.getElementById('uploadPreviewImg').style.display = 'none';
-    document.getElementById('dropzone').style.display = 'none';
-    toast('✅ Video ready! Title likho aur Publish karo.');
+  const ext = (f.name || '').split('.').pop().toLowerCase();
+  const isVid = f.type.startsWith('video')
+    || ['mp4','mov','webm','avi','mkv','m4v','3gp'].includes(ext);
+
+  // File size check
+  const maxSize = isVid ? 200 * 1024 * 1024 : 20 * 1024 * 1024;
+  if (f.size > maxSize) {
+    toast(`⚠️ File badi hai! Max ${isVid ? '200MB' : '20MB'} allowed.`);
+    upFile = null;
+    return;
+  }
+
+  // Type check
+  const allowedExt  = ['jpg','jpeg','png','webp','gif','mp4','mov','webm','avi','mkv','m4v','3gp'];
+  const allowedMime = ['image/jpeg','image/jpg','image/png','image/webp','image/gif',
+    'video/mp4','video/quicktime','video/webm','video/avi','video/x-msvideo',
+    'video/3gpp','video/x-matroska','application/octet-stream',''];
+  if (!allowedMime.includes(f.type) && !allowedExt.includes(ext)) {
+    toast('⚠️ Sirf JPG PNG WEBP MP4 MOV WEBM allowed hai.');
+    upFile = null;
+    return;
+  }
+
+  // Adult content filename check
+  if (typeof checkAdultContent === 'function') {
+    const ac = checkAdultContent('', '', f.name);
+    if (ac.blocked) {
+      toast('🚫 Ye content allowed nahi hai!');
+      upFile = null;
+      return;
+    }
+  }
+
+  // Upload type auto-detect
+  if (isVid && upType === 'image') upType = 'video';
+
+  // Hide dropzone
+  document.getElementById('dropzone').style.display = 'none';
+
+  if (isVid) {
+    // ✅ Video — blob URL (instant, no conversion)
+    try {
+      const blobUrl = URL.createObjectURL(f);
+      upData = blobUrl;
+      const vEl = document.getElementById('uploadVideoPreview');
+      vEl.src = blobUrl;
+      vEl.style.display = 'block';
+      document.getElementById('uploadPreviewImg').style.display = 'none';
+      toast('✅ Video ready! Title likho aur Publish karo.');
+    } catch(e) {
+      toast('⚠️ Video load nahi hui: ' + e.message);
+      document.getElementById('dropzone').style.display = 'block';
+    }
   } else {
-    // Image ke liye FileReader use karo
+    // ✅ Image — FileReader
+    document.getElementById('uploadPreviewImg').style.display = 'none';
     const r = new FileReader();
     r.onload = ev => {
       upData = ev.target.result;
-      document.getElementById('uploadPreviewImg').src = upData;
-      document.getElementById('uploadPreviewImg').style.display = 'block';
+      const iEl = document.getElementById('uploadPreviewImg');
+      iEl.src = upData;
+      iEl.style.display = 'block';
       document.getElementById('uploadVideoPreview').style.display = 'none';
-      document.getElementById('dropzone').style.display = 'none';
+      toast('✅ Image ready! Title likho aur Publish karo.');
+    };
+    r.onerror = () => {
+      toast('⚠️ Image load nahi hui. Dobara try karo.');
+      document.getElementById('dropzone').style.display = 'block';
     };
     r.readAsDataURL(f);
   }
@@ -2733,18 +2794,18 @@ async function submitPin(){
   let finalVid = isVideoType ? upData : null;
 
   // ── LOCAL FILE CHECK ──
-  // content:// ya file:// protocol = local file, Cloudinary nahi chalega
+  // Sirf actual file:// ya localhost pe local mode — content:// Android ka normal URL hai
   const isLocalFile = location.protocol === 'file:'
-    || location.protocol === 'content:'
     || location.hostname === 'localhost'
-    || location.hostname === '127.0.0.1'
-    || !navigator.onLine;
+    || location.hostname === '127.0.0.1';
 
-  // ── CLOUDINARY UPLOAD (sirf online + deployed pe) ──
-  if(upFile && !isLocalFile) {
-    const isVidFile = upFile.type.startsWith('video');
+  // ── CLOUDINARY UPLOAD ──
+  // upFile hai + internet hai = Cloudinary pe upload karo
+  if (upFile && navigator.onLine && !isLocalFile) {
+    const ext2 = (upFile.name||'').split('.').pop().toLowerCase();
+    const isVidFile = upFile.type.startsWith('video') || ['mp4','mov','webm','avi','mkv','m4v','3gp'].includes(ext2);
 
-    // ✅ Upload modal minimize karo aur pill dikhao
+    // Upload modal minimize karo aur pill dikhao
     document.getElementById('uploadModal').classList.remove('open');
     updateUploadPill(isVidFile ? '📤 Video upload ho rahi hai...' : '📤 Image upload ho rahi hai...', 10);
 
@@ -2753,13 +2814,15 @@ async function submitPin(){
       updateUploadPill('⚙️ Save ho raha hai...', 80);
       if (isVidFile) {
         finalVid = cloudUrl;
-        // ✅ Cloudinary auto thumbnail - video se .jpg banao
+        // Cloudinary thumbnail
         const parts = cloudUrl.split('/upload/');
         if (parts.length === 2) {
-          const fname = parts[1].replace(/\.(mp4|mov|webm|avi|mkv)(\?.*)?$/i, '.jpg');
-          finalSrc = `${parts[0]}/upload/so_0,w_400,h_711,c_fill,q_auto,f_jpg/${fname}`;
+          const hasVer = parts[1].match(/^v\d+\//);
+          const ver = hasVer ? hasVer[0] : '';
+          const fname = parts[1].replace(/^v?\d*\/?/,'').replace(/\.(mp4|mov|webm|avi|mkv|m4v)(\?.*)?$/i, '.jpg');
+          finalSrc = `${parts[0]}/upload/so_1,w_400,h_711,c_fill,q_auto,f_jpg/${ver}${fname}`;
         } else {
-          finalSrc = cloudUrl.replace(/\.(mp4|mov|webm|avi|mkv)(\?.*)?$/i, '.jpg');
+          finalSrc = cloudUrl.replace(/\.(mp4|mov|webm|avi|mkv|m4v)(\?.*)?$/i, '.jpg');
         }
       } else {
         finalSrc = cloudUrl;
@@ -2772,9 +2835,7 @@ async function submitPin(){
       return;
     }
   } else if (isLocalFile) {
-    // Local file mode — base64 se kaam chalao, Cloudinary skip
     toast('📌 Local mode — post seedha save ho rahi hai...');
-    // base64 already upData mein hai, finalSrc/finalVid set hai
   }
 
   const postId = Date.now();
@@ -4805,74 +4866,46 @@ function postComment() {
   _origPostComment();
 }
 
-// ── 6. UPLOAD SAFETY ──
-const _origHandleFileSelect = handleFileSelect;
-function handleFileSelect(inp) {
-  const f = inp.files[0];
-  if (!f) return;
-
-  // File size limit: images 20MB, videos 200MB (relaxed for Android)
-  const isVideo = f.type.startsWith('video') || f.name.match(/\.(mp4|mov|webm|avi|mkv|m4v)$/i);
-  const maxSize = isVideo ? 200 * 1024 * 1024 : 20 * 1024 * 1024;
-  if (f.size > maxSize) {
-    toast(`⚠️ File badi hai! Max ${isVideo ? '200MB' : '20MB'} allowed.`);
-    inp.value = '';
-    return;
-  }
-
-  // Android pe MIME type empty ho sakta hai — extension se check karo bhi
-  const ext = f.name.split('.').pop().toLowerCase();
-  const allowedExt = ['jpg','jpeg','png','webp','gif','mp4','mov','webm','avi','mkv','m4v','3gp'];
-  const allowedMime = ['image/jpeg','image/jpg','image/png','image/webp','image/gif',
-    'video/mp4','video/quicktime','video/webm','video/avi','video/x-msvideo',
-    'video/3gpp','video/x-matroska','application/octet-stream',''];
-
-  const mimeOk = allowedMime.includes(f.type) || f.type === '';
-  const extOk = allowedExt.includes(ext);
-
-  if (!mimeOk && !extOk) {
-    toast('⚠️ Ye file type allowed nahi! Sirf JPG PNG WEBP MP4 MOV WEBM.');
-    inp.value = '';
-    return;
-  }
-
-  // ✅ ADULT CONTENT — filename check
-  if (typeof checkAdultContent === 'function') {
-    const check = checkAdultContent('', '', f.name);
-    if (check.blocked) {
-      toast('🚫 Ye content ClickPin pe allowed nahi hai!');
-      inp.value = '';
-      return;
-    }
-  }
-
-  _origHandleFileSelect(inp);
-}
+// ── 6. UPLOAD SAFETY — merged into main handleFileSelect above ──
+// (No override needed — checks already in main function)
 
 // ── 7. SUBMIT PIN VALIDATION ──
 const _origSubmitPin = submitPin;
 async function submitPin() {
-  if (!rateLimitCheck('upload', 3)) return;
+  if (!rateLimitCheck('upload', 10)) return; // 10 per minute (relaxed)
+
   const title = document.getElementById('pinTitle')?.value?.trim() || '';
-  if (!validateTitle(title)) {
+  if (!title) { toast('⚠️ Title zaruri hai!'); return; }
+
+  // Script injection check only
+  if (/<script|javascript:/i.test(title)) {
     toast('⚠️ Title mein invalid characters hain!');
     return;
   }
+
   const desc = document.getElementById('pinDesc')?.value?.trim() || '';
-  if (desc && !validateText(desc, 500)) {
+  if (desc && /<script|javascript:/i.test(desc)) {
     toast('⚠️ Description mein invalid text hai!');
     return;
   }
 
-  // ✅ ADULT CONTENT CHECK — title + desc
-  const filename = (window.upFile && window.upFile.name) || '';
+  // Adult content check
+  const filename = (upFile && upFile.name) || '';
   const adultCheck = checkAdultContent(title, desc, filename);
   if (adultCheck.blocked) {
     toast('🚫 ' + adultCheck.reason + ' ClickPin family-friendly platform hai.');
     return;
   }
 
-  await _origSubmitPin();
+  try {
+    await _origSubmitPin();
+  } catch(e) {
+    console.error('submitPin error:', e);
+    // pubBtn reset karo agar error aaye
+    const pubBtn = document.querySelector('.publish-btn');
+    if (pubBtn) { pubBtn.disabled = false; pubBtn.textContent = '🚀 Publish'; }
+    toast('❌ Error: ' + (e.message || 'Dobara try karo'));
+  }
 }
 
 // ── 8. SIGN IN / ACCOUNT PROTECTION ──
