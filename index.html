@@ -2564,10 +2564,30 @@ function minimizeUpload() {
   }
 }
 
-// ✅ MAXIMIZE — wapas upload modal kholо
+// ✅ PILL TAP — check karo file aur title ready hain
 function maximizeUpload() {
-  hidePill();
-  document.getElementById('uploadModal').classList.add('open');
+  const title = document.getElementById('pinTitle') ? document.getElementById('pinTitle').value.trim() : '';
+
+  if (upFile && title) {
+    // File aur title dono ready — seedha publish
+    hidePill();
+    submitPin();
+  } else if (upFile && !title) {
+    // File hai, title nahi — modal kholо
+    hidePill();
+    document.getElementById('uploadModal').classList.add('open');
+    toast('⚠️ Title likhein pehle!');
+    document.getElementById('pinTitle').focus();
+  } else {
+    // File nahi hai — fresh start
+    hidePill();
+    upFile = null; upData = null;
+    document.getElementById('uploadModal').classList.add('open');
+    document.getElementById('dropzone').style.display = 'block';
+    document.getElementById('uploadPreviewImg').style.display = 'none';
+    document.getElementById('uploadVideoPreview').style.display = 'none';
+    toast('⚠️ File dobara select karo');
+  }
 }
 
 function hidePill() {
@@ -2589,10 +2609,12 @@ function closeUpload(){
   document.getElementById('uploadVideoPreview').style.display='none';document.getElementById('uploadVideoPreview').src='';
   document.getElementById('dropzone').style.display='block';
   ['pinTitle','pinDesc'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('pinCat').value='';upData=null;upType='image';
+  document.getElementById('pinCat').value='';
+  upData=null; upFile=null; upType='image'; // ✅ upFile bhi reset karo
   document.getElementById('utImage').classList.add('active');document.getElementById('utVideo').classList.remove('active');document.getElementById('utReel').classList.remove('active');
-  document.getElementById('fileInput').accept='image/*';
-  document.getElementById('dzIcon').textContent='🖼️';document.getElementById('dzText').textContent='Click ya drag & drop';
+  document.getElementById('fileInput').accept='image/*,video/*';
+  document.getElementById('fileInput').value=''; // ✅ file input bhi clear karo
+  document.getElementById('dzIcon').textContent='🖼️';document.getElementById('dzText').textContent='Click karo — Photo ya Video chunein';
 }
 function switchUploadType(tp,btn){
   document.querySelectorAll('.utype-tab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');upType=tp;
@@ -2619,6 +2641,10 @@ function handleFileSelect(inp){
     return;
   }
   const f = inp.files[0];
+
+  // ✅ fileInput value clear karo — taaki same file dobara select ho sake
+  try { inp.value = ''; } catch(e) {}
+
   upFile = f;
 
   const ext = (f.name || '').split('.').pop().toLowerCase();
@@ -2661,21 +2687,22 @@ function handleFileSelect(inp){
   document.getElementById('dropzone').style.display = 'none';
 
   if (isVid) {
-    // ✅ Video — blob URL (instant, no conversion)
+    // Blob URL preview — instant
     try {
       const blobUrl = URL.createObjectURL(f);
-      upData = blobUrl;
       const vEl = document.getElementById('uploadVideoPreview');
       vEl.src = blobUrl;
       vEl.style.display = 'block';
       document.getElementById('uploadPreviewImg').style.display = 'none';
       toast('✅ Video ready! Title likho aur Publish karo.');
+      // upData = blobUrl taaki submitPin mein fallback ho sake
+      upData = blobUrl;
     } catch(e) {
       toast('⚠️ Video load nahi hui: ' + e.message);
       document.getElementById('dropzone').style.display = 'block';
     }
   } else {
-    // ✅ Image — FileReader
+    // Image — FileReader
     document.getElementById('uploadPreviewImg').style.display = 'none';
     const r = new FileReader();
     r.onload = ev => {
@@ -2771,12 +2798,29 @@ dz.addEventListener('dragleave',()=>dz.classList.remove('dragover'));
 dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('dragover');const f=e.dataTransfer.files[0];if(f){const dt=new DataTransfer();dt.items.add(f);document.getElementById('fileInput').files=dt.files;handleFileSelect(document.getElementById('fileInput'));}});
 
 async function submitPin(){
-  const title=document.getElementById('pinTitle').value.trim();
-  if(!title){toast('⚠️ Title zaruri hai!');return;}
-  if(!upData && !upFile){toast('⚠️ Pehle file choose karo');return;}
+  const title = document.getElementById('pinTitle').value.trim();
+  if (!title) { toast('⚠️ Title zaruri hai!'); return; }
+
+  // ✅ Adult content check
+  if (typeof checkAdultContent === 'function') {
+    const desc2 = document.getElementById('pinDesc')?.value?.trim() || '';
+    const fname = (upFile && upFile.name) || '';
+    const ac = checkAdultContent(title, desc2, fname);
+    if (ac.blocked) { toast('🚫 ' + ac.reason); return; }
+  }
+
+  if (!upData && !upFile) {
+    toast('⚠️ Pehle file choose karo');
+    hidePill();
+    document.getElementById('uploadModal').classList.add('open');
+    return;
+  }
 
   const pubBtn = document.querySelector('.publish-btn');
-  if(pubBtn){pubBtn.disabled=true;pubBtn.textContent='⏳ Upload ho raha hai...';}
+  if (pubBtn) { pubBtn.disabled = true; pubBtn.textContent = '⏳ Upload ho rahi hai...'; }
+
+  // ✅ Turant progress dikhao
+  updateUploadPill('📤 Upload ho rahi hai...', 5);
 
   const currentId   = myClickPinId || '@user';
   const currentName = myClickPinName || (myClickPinId ? myClickPinId.replace('@','') : 'You');
@@ -2789,32 +2833,30 @@ async function submitPin(){
   };
 
   const isVideoType = (upType === 'video' || upType === 'reel');
+  let finalSrc = upData || '';
+  let finalVid = isVideoType ? (upData || '') : null;
 
-  let finalSrc = upData;
-  let finalVid = isVideoType ? upData : null;
-
-  // ── LOCAL FILE CHECK ──
-  // Sirf actual file:// ya localhost pe local mode — content:// Android ka normal URL hai
+  // ── LOCAL CHECK — sirf file:// aur localhost ──
   const isLocalFile = location.protocol === 'file:'
     || location.hostname === 'localhost'
     || location.hostname === '127.0.0.1';
 
   // ── CLOUDINARY UPLOAD ──
-  // upFile hai + internet hai = Cloudinary pe upload karo
-  if (upFile && navigator.onLine && !isLocalFile) {
-    const ext2 = (upFile.name||'').split('.').pop().toLowerCase();
-    const isVidFile = upFile.type.startsWith('video') || ['mp4','mov','webm','avi','mkv','m4v','3gp'].includes(ext2);
+  const fileToUpload = upFile; // actual File object
+  if (fileToUpload && !isLocalFile) {
+    const ext2 = (fileToUpload.name || '').split('.').pop().toLowerCase();
+    const isVidFile = fileToUpload.type.startsWith('video')
+      || ['mp4','mov','webm','avi','mkv','m4v','3gp'].includes(ext2);
 
-    // Upload modal minimize karo aur pill dikhao
     document.getElementById('uploadModal').classList.remove('open');
     updateUploadPill(isVidFile ? '📤 Video upload ho rahi hai...' : '📤 Image upload ho rahi hai...', 10);
 
     try {
-      const cloudUrl = await uploadToCloudinary(upFile);
+      const cloudUrl = await uploadToCloudinary(fileToUpload);
       updateUploadPill('⚙️ Save ho raha hai...', 80);
+
       if (isVidFile) {
         finalVid = cloudUrl;
-        // Cloudinary thumbnail
         const parts = cloudUrl.split('/upload/');
         if (parts.length === 2) {
           const hasVer = parts[1].match(/^v\d+\//);
@@ -2822,20 +2864,22 @@ async function submitPin(){
           const fname = parts[1].replace(/^v?\d*\/?/,'').replace(/\.(mp4|mov|webm|avi|mkv|m4v)(\?.*)?$/i, '.jpg');
           finalSrc = `${parts[0]}/upload/so_1,w_400,h_711,c_fill,q_auto,f_jpg/${ver}${fname}`;
         } else {
-          finalSrc = cloudUrl.replace(/\.(mp4|mov|webm|avi|mkv|m4v)(\?.*)?$/i, '.jpg');
+          finalSrc = cloudUrl;
         }
       } else {
         finalSrc = cloudUrl;
         finalVid = null;
       }
-      toast('✅ Upload ho gayi! Ab save ho rahi hai...');
+      toast('✅ Upload ho gayi!');
     } catch(err) {
-      alert('❌ Upload fail hui!\n\nKaran: ' + err.message + '\n\nInternet check karo ya dobara try karo.');
-      if(pubBtn){pubBtn.disabled=false;pubBtn.textContent='🚀 Publish';}
+      if (pubBtn) { pubBtn.disabled = false; pubBtn.textContent = '🚀 Publish'; }
+      document.getElementById('uploadModal').classList.add('open');
+      hidePill();
+      alert('❌ Upload fail hui!\n\n' + (err.message || '') + '\n\nInternet check karo ya dobara try karo.');
       return;
     }
   } else if (isLocalFile) {
-    toast('📌 Local mode — post seedha save ho rahi hai...');
+    toast('📌 Local mode — seedha save ho raha hai...');
   }
 
   const postId = Date.now();
@@ -2848,110 +2892,88 @@ async function submitPin(){
     desc  : document.getElementById('pinDesc').value || 'Naya post',
     cat   : document.getElementById('pinCat').value  || 'Home',
     likes : 0,
-    user  : currentUser
+    user  : currentUser,
+    _isNew: true,
+    _uploadTime: Date.now()
   };
 
-  // ── FIRESTORE SAVE (sirf online + login hoga) ──
-  const loggedUser = JSON.parse(localStorage.getItem('cp_current_user') || 'null');
-  let firebaseUid = null;
-  if (!isLocalFile && fbAuth && fbAuth.currentUser) {
-    firebaseUid = fbAuth.currentUser.uid;
-  } else if (!isLocalFile && fbAuth) {
-    await new Promise((resolve) => {
-      const unsub = fbAuth.onAuthStateChanged((u) => { unsub(); if(u) firebaseUid = u.uid; resolve(); });
-      setTimeout(resolve, 2000);
-    });
-  }
-
-  const userId = firebaseUid
-    || (loggedUser && loggedUser.uid)
-    || (loggedUser && loggedUser.email)
-    || null;
-
-  if (!isLocalFile && db && userId) {
-    try {
-      // ✅ Base64 kabhi bhi Firestore mein mat bhejo — size limit exceed hoti hai
-      const srcToSave = (finalSrc && !finalSrc.startsWith('data:')) ? finalSrc : '';
-      const vidToSave = (finalVid && !finalVid.startsWith('data:')) ? finalVid : '';
-
-      // ✅ userAvatar bhi base64 nahi hona chahiye Firestore mein
-      const avatarToSave = (currentUser.avatar && !currentUser.avatar.startsWith('data:'))
-        ? currentUser.avatar.substring(0, 300)  // max 300 chars
-        : `https://i.pravatar.cc/60?img=${avatarSeed}`;
-
-      // ✅ Agar Cloudinary URL nahi mila (src empty) toh Firestore mein mat save karo
-      if (!srcToSave) {
-        toast('⚠️ Image Cloudinary pe upload nahi hui — post locally dikh rahi hai.');
-        // Local mein dikh raha hai (PIN_DATA.unshift neeche hai) but Firestore skip
-      } else {
-        const docRef = await db.collection('posts').add({
-          id        : np.id,
-          type      : np.type,
-          src       : srcToSave,
-          vid       : vidToSave,
-          title     : np.title,
-          desc      : np.desc,
-          cat       : np.cat,
-          likes     : 0,
-          userId    : userId,
-          userName  : currentUser.name,
-          userAvatar: avatarToSave,
-          createdAt : new Date().toISOString()
-        });
-        np.firestoreId     = docRef.id;
-        np.firestoreUserId = userId;
-
-        // ✅ localStorage backup — refresh pe bhi dikhe
-        try {
-          const saved = JSON.parse(localStorage.getItem('cp_user_posts') || '[]');
-          saved.unshift({
-            id: np.id, firestoreId: docRef.id, type: np.type,
-            src: srcToSave, vid: vidToSave,
-            title: np.title, desc: np.desc, cat: np.cat, likes: 0,
-            userId, userName: currentUser.name, userAvatar: avatarToSave,
-            createdAt: new Date().toISOString()
-          });
-          localStorage.setItem('cp_user_posts', JSON.stringify(saved.slice(0, 50)));
-        } catch(le) {}
-
-        toast('🎉 Post publish ho gayi! Refresh pe bhi dikhegi ✅');
-      }
-    } catch(e) {
-      console.error('Firestore save fail:', e);
-      toast('⚠️ Cloud save fail: ' + e.message.substring(0, 80));
-    }
-  } else {
-    // Local only save
-    try {
-      const srcLocal = (finalSrc && !finalSrc.startsWith('data:')) ? finalSrc : '';
-      const vidLocal = (finalVid && !finalVid.startsWith('data:')) ? finalVid : '';
-      if (srcLocal) {
-        const saved = JSON.parse(localStorage.getItem('cp_user_posts') || '[]');
-        saved.unshift({ id: np.id, type: np.type, src: srcLocal, vid: vidLocal, title: np.title, desc: np.desc, cat: np.cat, likes: 0, createdAt: new Date().toISOString() });
-        localStorage.setItem('cp_user_posts', JSON.stringify(saved.slice(0, 50)));
-      }
-    } catch(le) {}
-    if (isLocalFile) {
-      toast('🎉 Post dikh rahi hai! Vercel pe deploy karo — tab refresh pe bhi rahegi.');
-    } else {
-      toast('🎉 Post dikh rahi hai! (Login se cloud bhi save hoga)');
-    }
-  }
-
-  np._isNew = true; // Mark as freshly uploaded
-  np._uploadTime = Date.now();
+  // ✅ PEHLE POST DIKHAO — user ko wait mat karao
   PIN_DATA.unshift(np);
   upFile = null;
+  upData = null;
   closeUpload();
-  // ✅ Pill success show karo
   updateUploadPill('✅ ' + np.title + ' — Upload ho gayi!', 100);
   setTimeout(() => hidePill(), 4000);
   applyFilters();
-  // Scroll to top to show new post
   window.scrollTo({ top: 0, behavior: 'smooth' });
-  const pp = document.getElementById('profilePage');
-  if (pp && pp.classList.contains('open')) openUserProfile();
-  if(pubBtn){pubBtn.disabled=false;pubBtn.textContent='🚀 Publish';}
+  if (pubBtn) { pubBtn.disabled = false; pubBtn.textContent = '🚀 Publish'; }
+  toast('🎉 Post publish ho gayi! ✅');
+
+  // ✅ FIRESTORE SAVE — background mein karo (non-blocking)
+  const loggedUser = JSON.parse(localStorage.getItem('cp_current_user') || 'null');
+  const isLocalFile2 = location.protocol === 'file:'
+    || location.hostname === 'localhost'
+    || location.hostname === '127.0.0.1';
+
+  if (!isLocalFile2 && db) {
+    // Background save — koi await nahi
+    (async () => {
+      try {
+        let firebaseUid = null;
+        if (fbAuth && fbAuth.currentUser) {
+          firebaseUid = fbAuth.currentUser.uid;
+        } else if (fbAuth) {
+          // Max 1 second wait
+          await new Promise(resolve => {
+            const t = setTimeout(resolve, 1000);
+            const unsub = fbAuth.onAuthStateChanged(u => {
+              unsub(); clearTimeout(t);
+              if (u) firebaseUid = u.uid;
+              resolve();
+            });
+          });
+        }
+        const userId = firebaseUid
+          || (loggedUser && loggedUser.uid)
+          || (loggedUser && loggedUser.email)
+          || null;
+
+        if (!userId) return; // Not logged in — skip
+
+        const srcToSave = (finalSrc && !finalSrc.startsWith('data:') && !finalSrc.startsWith('blob:')) ? finalSrc : '';
+        const vidToSave = (finalVid && !finalVid.startsWith('data:') && !finalVid.startsWith('blob:')) ? finalVid : '';
+        if (!srcToSave) return;
+
+        const avatarToSave = (currentUser.avatar && !currentUser.avatar.startsWith('data:'))
+          ? currentUser.avatar.substring(0, 300)
+          : `https://i.pravatar.cc/60?img=${avatarSeed}`;
+
+        const docRef = await db.collection('posts').add({
+          id: np.id, type: np.type, src: srcToSave, vid: vidToSave,
+          title: np.title, desc: np.desc, cat: np.cat, likes: 0,
+          userId, userName: currentUser.name, userAvatar: avatarToSave,
+          createdAt: new Date().toISOString()
+        });
+        np.firestoreId = docRef.id;
+        np.firestoreUserId = userId;
+
+        // localStorage backup
+        try {
+          const saved = JSON.parse(localStorage.getItem('cp_user_posts') || '[]');
+          saved.unshift({ id: np.id, firestoreId: docRef.id, type: np.type,
+            src: srcToSave, vid: vidToSave, title: np.title, desc: np.desc,
+            cat: np.cat, likes: 0, userId, userName: currentUser.name,
+            userAvatar: avatarToSave, createdAt: new Date().toISOString() });
+          localStorage.setItem('cp_user_posts', JSON.stringify(saved.slice(0, 50)));
+        } catch(le) {}
+
+        console.log('✅ Firestore save complete:', docRef.id);
+      } catch(e) {
+        console.error('Firestore background save fail:', e.message);
+        // User ko disturb mat karo — post already dikh rahi hai
+      }
+    })();
+  }
 }
 
 // ─── FEEDBACK ───
@@ -4870,44 +4892,6 @@ function postComment() {
 // (No override needed — checks already in main function)
 
 // ── 7. SUBMIT PIN VALIDATION ──
-const _origSubmitPin = submitPin;
-async function submitPin() {
-  if (!rateLimitCheck('upload', 10)) return; // 10 per minute (relaxed)
-
-  const title = document.getElementById('pinTitle')?.value?.trim() || '';
-  if (!title) { toast('⚠️ Title zaruri hai!'); return; }
-
-  // Script injection check only
-  if (/<script|javascript:/i.test(title)) {
-    toast('⚠️ Title mein invalid characters hain!');
-    return;
-  }
-
-  const desc = document.getElementById('pinDesc')?.value?.trim() || '';
-  if (desc && /<script|javascript:/i.test(desc)) {
-    toast('⚠️ Description mein invalid text hai!');
-    return;
-  }
-
-  // Adult content check
-  const filename = (upFile && upFile.name) || '';
-  const adultCheck = checkAdultContent(title, desc, filename);
-  if (adultCheck.blocked) {
-    toast('🚫 ' + adultCheck.reason + ' ClickPin family-friendly platform hai.');
-    return;
-  }
-
-  try {
-    await _origSubmitPin();
-  } catch(e) {
-    console.error('submitPin error:', e);
-    // pubBtn reset karo agar error aaye
-    const pubBtn = document.querySelector('.publish-btn');
-    if (pubBtn) { pubBtn.disabled = false; pubBtn.textContent = '🚀 Publish'; }
-    toast('❌ Error: ' + (e.message || 'Dobara try karo'));
-  }
-}
-
 // ── 8. SIGN IN / ACCOUNT PROTECTION ──
 const _origCpSignIn = cpSignIn;
 async function cpSignIn() {
