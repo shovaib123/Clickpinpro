@@ -81,8 +81,9 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(255,
 /* VIDEO PIN — normal masonry height, hover to play */
 .pin-video-wrap{position:relative;border-radius:var(--radius) var(--radius) 0 0;overflow:hidden}
 .pin-video-wrap video{width:100%;display:block;object-fit:cover}
-.pin-video-wrap img.vid-thumb{width:100%;display:block;object-fit:cover;position:absolute;top:0;left:0;width:100%;height:100%;transition:opacity .3s}
+.pin-video-wrap img.vid-thumb{width:100%;display:block;object-fit:cover;position:absolute;top:0;left:0;width:100%;height:100%;transition:opacity .5s;z-index:2}
 .pin-video-wrap.playing img.vid-thumb{opacity:0}
+.pin-video-wrap video{z-index:1}
 .video-badge{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.72);color:#fff;border-radius:20px;padding:4px 10px;font-size:11px;font-weight:700;display:flex;align-items:center;gap:5px;backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.15)}
 .vid-play-ic{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;transition:opacity .3s}
 .vid-play-ic-inner{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.22);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;font-size:22px}
@@ -90,7 +91,9 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(255,
 
 /* REEL PIN — 9:16 vertical */
 .pin-reel-wrap{position:relative;border-radius:var(--radius) var(--radius) 0 0;overflow:hidden;aspect-ratio:9/16}
-.pin-reel-wrap video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity .3s}
+.pin-reel-wrap img.reel-thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2;transition:opacity .5s}
+.pin-reel-wrap.playing img.reel-thumb{opacity:0}
+.pin-reel-wrap video{z-index:1}
 .pin-reel-wrap img.reel-thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity .3s}
 .pin-reel-wrap.playing img.reel-thumb{opacity:0}
 .pin-reel-wrap.playing .vid-play-ic{opacity:0}
@@ -1930,10 +1933,19 @@ function _realBuildGrid(list){
     if(p.type==='reel'){
       const isB64 = p.src && p.src.startsWith('data:');
       const vidSrc = p.vid || p.src || '';
-      const rawThumb = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)/i)) ? p.src : vidSrc;
-      const thumbSrc = isB64 ? p.src : getCloudinaryThumb(rawThumb, 400, 711);
+      // ✅ src already .jpg thumbnail ho sakta hai — use it directly
+      // agar src video URL hai toh vid se thumbnail banao
+      let thumbSrc = '';
+      if (isB64) {
+        thumbSrc = p.src;
+      } else if (p.src && p.src.match(/\.(jpg|jpeg|png|webp)(\?.*)?$/i)) {
+        thumbSrc = p.src; // already a thumbnail image
+      } else {
+        // src is video URL or missing — generate from vid
+        thumbSrc = getCloudinaryThumb(p.vid || p.src || '', 400, 711);
+      }
       media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">
-        ${thumbSrc ? `<img class="reel-thumb" src="${thumbSrc}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none';setTimeout(()=>{this.src=this.src+'?r='+Date.now();this.style.display='block'},3000)">` : ''}
+        ${thumbSrc ? `<img class="reel-thumb" src="${thumbSrc}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none';setTimeout(()=>{this.src=this.src.split('?')[0]+'?r='+Date.now();this.style.display='block'},3000)">` : ''}
         <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video>
         <div class="reel-badge">🎬 Reel</div>
         <div class="reel-dur">▶ 0:${String(15+p.id%45).padStart(2,'0')}</div>
@@ -1942,11 +1954,17 @@ function _realBuildGrid(list){
     } else if(p.type==='video'){
       const isB64 = p.src && p.src.startsWith('data:');
       const vidSrc = p.vid || p.src;
-      const rawThumb = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)/i)) ? p.src : vidSrc;
-      const vThumb = isB64 ? p.src : getCloudinaryThumb(rawThumb, 400, imgH);
+      let vThumb = '';
+      if (isB64) {
+        vThumb = p.src;
+      } else if (p.src && p.src.match(/\.(jpg|jpeg|png|webp)(\?.*)?$/i)) {
+        vThumb = p.src; // already a thumbnail
+      } else {
+        vThumb = getCloudinaryThumb(p.vid || p.src || '', 400, imgH);
+      }
       media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)">
         <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video>
-        ${vThumb ? `<img class="vid-thumb" src="${vThumb}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none';setTimeout(()=>{this.src=this.src+'?r='+Date.now();this.style.display='block'},3000)">` : ''}
+        ${vThumb ? `<img class="vid-thumb" src="${vThumb}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none';setTimeout(()=>{this.src=this.src.split('?')[0]+'?r='+Date.now();this.style.display='block'},3000)">` : ''}
         <div class="video-badge">🎥 Video</div>
         <div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div>
       </div>`;
@@ -1998,12 +2016,19 @@ function setBn(id){document.querySelectorAll('.bn-btn').forEach(b=>b.classList.r
 // ─── VIDEO HOVER PLAY ───
 function hoverPlay(id){
   const p=PIN_DATA.find(x=>x.id===id);if(!p||p.type==='image')return;
-  const wrap=document.getElementById('rw'+id),vid=document.getElementById('rv'+id);
+  const wrap=document.getElementById('rw'+id);
+  const vid=document.getElementById('rv'+id);
   if(!vid||!vid.src)return;
+  vid.muted=true;
   vid.play().then(()=>{
+    // ✅ Sirf jab video actually play ho tab thumbnail hide karo
     vid.style.opacity='1';
     wrap.classList.add('playing');
-  }).catch(()=>{});
+  }).catch(()=>{
+    // Play fail — thumbnail dikhti rahe
+    vid.style.opacity='0';
+    wrap.classList.remove('playing');
+  });
 }
 function hoverStop(id){
   const p=PIN_DATA.find(x=>x.id===id);if(!p||p.type==='image')return;
@@ -3407,24 +3432,30 @@ const videoObserver = new IntersectionObserver((entries) => {
     const wrap = entry.target;
     const video = wrap.querySelector('video');
     if (!video) return;
-    if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-      video.muted = true;
-      video.play().catch(()=>{});
-      const thumb = wrap.querySelector('.vid-thumb, .reel-thumb');
-      if (thumb) thumb.style.opacity = '0';
-      wrap.classList.add('playing');
-    } else {
-      video.pause(); video.currentTime = 0;
+    if (!entry.isIntersecting) {
+      // Screen se bahar gayi — pause karo
+      video.pause();
+      video.currentTime = 0;
+      video.style.opacity = '0';
+      // ✅ Thumbnail wapas dikhao
       const thumb = wrap.querySelector('.vid-thumb, .reel-thumb');
       if (thumb) thumb.style.opacity = '1';
       wrap.classList.remove('playing');
     }
+    // ✅ Scroll pe auto-play NAHI — sirf thumbnail dikhao
+    // Auto-play sirf hover pe hoga (hoverPlay function se)
   });
-}, { threshold: 0.5 });
+}, { threshold: 0.1 });
 
 function observeVideoPins() {
   document.querySelectorAll('.pin-video-wrap, .pin-reel-wrap').forEach(wrap => {
     if (!wrap.dataset.obs) { videoObserver.observe(wrap); wrap.dataset.obs = '1'; }
+    // ✅ Thumbnail hamesha visible rakho initially
+    const thumb = wrap.querySelector('.vid-thumb, .reel-thumb');
+    if (thumb) { thumb.style.opacity = '1'; thumb.style.display = 'block'; }
+    const vid = wrap.querySelector('video');
+    if (vid) vid.style.opacity = '0';
+    wrap.classList.remove('playing');
   });
 }
 
@@ -4165,13 +4196,20 @@ function updateNavAvatar() {
 function openUserProfile() {
   pushHistory('profile');
   const id = myClickPinId || localStorage.getItem('cp_user_id') || '@user';
-  const name = myClickPinName || localStorage.getItem('cp_user_name') || 'ClickPin User';
+  const name = myClickPinName || localStorage.getItem('cp_user_name') || '';
   const bio = localStorage.getItem('cp_bio') || '';
   const savedAv = localStorage.getItem('cp_avatar');
-  const avatarSeed = Math.abs(id.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % 70 + 1;
-  const avatarSrc = savedAv || `https://i.pravatar.cc/120?img=${avatarSeed}`;
+  // ✅ No dummy pic — sirf real uploaded avatar ya blank
+  const validAv = savedAv && savedAv.startsWith('http') ? savedAv : null;
+  const avImg = document.getElementById('profileAvImg');
+  if (validAv) {
+    avImg.src = validAv;
+    avImg.style.display = 'block';
+  } else {
+    avImg.src = '';
+    avImg.style.background = 'linear-gradient(135deg,#E60023,#ff6b6b)';
+  }
 
-  document.getElementById('profileAvImg').src = avatarSrc;
   document.getElementById('profileName').textContent = name;
   document.getElementById('profileHandle').textContent = id;
   // Show bio if saved
@@ -4188,11 +4226,9 @@ function openUserProfile() {
   ));
   document.getElementById('pstat-pins').textContent = myPins.length;
   document.getElementById('pstat-boards').textContent = BOARDS.length;
-  // Save followers count so it stays consistent
-  if (!localStorage.getItem('cp_followers')) {
-    localStorage.setItem('cp_followers', Math.floor(Math.random() * 500 + 50));
-  }
-  document.getElementById('pstat-followers').textContent = localStorage.getItem('cp_followers');
+  // ✅ Real followers count — fake random nahi
+  const realFollowers = localStorage.getItem('cp_followers') || '0';
+  document.getElementById('pstat-followers').textContent = realFollowers;
   document.getElementById('pstat-likes').textContent = myPins.reduce((a, p) => a + p.likes, 0);
   switchProfileTab('pins', document.getElementById('ptab-pins'));
   document.getElementById('profilePage').classList.add('open');
@@ -4659,7 +4695,7 @@ function openRegisterModal() {
   document.getElementById('regId').value = '';
   document.getElementById('regBio').value = '';
   document.getElementById('regIdSuggestion').textContent = '';
-  document.getElementById('regAvPreview').src = 'https://i.pravatar.cc/120?img=' + (Math.floor(Math.random()*30)+1);
+  document.getElementById('regAvPreview').src = '';
   document.getElementById('registerModal').style.display = 'flex';
 }
 function closeRegisterModal() {
@@ -5350,7 +5386,7 @@ try {
     <button onclick="openSettings()" style="position:absolute;top:14px;right:16px;background:rgba(255,255,255,.2);border:none;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;color:#fff;backdrop-filter:blur(6px)">⚙️</button>
     <div style="display:flex;align-items:flex-end;gap:14px;padding-bottom:0">
       <div class="profile-av-wrap" onclick="openEditProfileModal()" style="cursor:pointer" title="Photo change">
-        <img class="profile-av" id="profileAvImg" src="https://i.pravatar.cc/120?img=1" alt="">
+        <img class="profile-av" id="profileAvImg" src="" alt="" style="background:linear-gradient(135deg,#E60023,#ff6b6b)">
         <div class="profile-av-edit">✏️</div>
       </div>
       <div style="flex:1;padding-bottom:14px">
@@ -5928,13 +5964,15 @@ function cpUpdateAuthUI(user) {
     authBtns.style.display = 'flex';
     avatarWrap.style.display = 'none';
     if (avatarBtn) { avatarBtn.innerHTML = ''; avatarBtn.textContent = 'U'; }
-    // Profile page reset karo
     const pName = document.getElementById('profileName');
     const pHandle = document.getElementById('profileHandle');
     const pAvImg = document.getElementById('profileAvImg');
-    if (pName) pName.textContent = 'ClickPin User';
-    if (pHandle) pHandle.textContent = '@user';
-    if (pAvImg) pAvImg.src = 'https://i.pravatar.cc/120?img=1';
+    const pBio = document.getElementById('profileBio');
+    if (pName) pName.textContent = '';
+    if (pHandle) pHandle.textContent = '';
+    // ✅ Dummy pic nahi — blank avatar circle
+    if (pAvImg) { pAvImg.src = ''; pAvImg.style.background = 'linear-gradient(135deg,#E60023,#ff6b6b)'; }
+    if (pBio) pBio.textContent = '';
   }
 }
 
@@ -6092,7 +6130,7 @@ function cpLogout() {
     const pBio = document.getElementById('profileBio');
     if (pName) pName.textContent = 'ClickPin User';
     if (pHandle) pHandle.textContent = '@user';
-    if (pAvImg) pAvImg.src = 'https://i.pravatar.cc/120?img=1';
+    if (pAvImg) { pAvImg.src = ''; pAvImg.style.background = 'linear-gradient(135deg,#E60023,#ff6b6b)'; }
     if (pBio) pBio.textContent = '';
 
     closeSettings();
