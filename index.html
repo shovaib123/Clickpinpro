@@ -3,12 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<!-- ✅ PWA SETUP -->
-<link rel="manifest" href="/manifest.json">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="ClickPin">
 <!-- ✅ SECURITY HEADERS -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="X-Frame-Options" content="DENY">
@@ -16,6 +10,7 @@
 <meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=()">
 <meta name="description" content="ClickPin – India ka apna visual discovery platform. Post, save aur share apni favourite images aur videos.">
 <meta name="theme-color" content="#E60023">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="ClickPin">
 <meta property="og:title" content="ClickPin – Apni Creativity Ko Click">
 <title>ClickPin – India Ka Visual Discovery Platform</title>
@@ -2876,15 +2871,12 @@ async function submitPin(){
   updateUploadPill('📤 Upload ho rahi hai...', 5);
 
   const currentId   = myClickPinId || '@user';
-  const currentName = myClickPinName || (myClickPinId ? myClickPinId.replace('@','') : 'User');
-  // ✅ Hamesha latest avatar lo — purani snapshot mat lo
-  function getLatestAvatar() {
-    const av = localStorage.getItem('cp_avatar');
-    return (av && av.startsWith('http')) ? av : '';
-  }
+  const currentName = myClickPinName || (myClickPinId ? myClickPinId.replace('@','') : 'You');
+  const savedAv     = localStorage.getItem('cp_avatar');
+  const avatarSeed  = Math.abs(currentId.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % 70 + 1;
   const currentUser = {
     name    : currentName,
-    get avatar() { return getLatestAvatar(); }, // dynamic — hamesha latest
+    avatar  : (savedAv && !savedAv.startsWith('data:')) ? savedAv : `https://i.pravatar.cc/60?img=${avatarSeed}`,
     followers: '0'
   };
 
@@ -4575,12 +4567,6 @@ function saveEditProfile() {
   const avSrc = avEl ? avEl.src : '';
   if (avSrc && avSrc.startsWith('http') && !avSrc.includes('pravatar.cc')) {
     localStorage.setItem('cp_avatar', avSrc);
-    // ✅ Apni sab existing posts ki avatar bhi update karo
-    PIN_DATA.forEach(p => {
-      if (p.user && p.user.name && p.user.name.toLowerCase() === myClickPinName.toLowerCase()) {
-        p.user.avatar = avSrc;
-      }
-    });
     // Firestore mein bhi save karo
     if (db && fbAuth && fbAuth.currentUser) {
       db.collection('users').doc(fbAuth.currentUser.uid).set({
@@ -4588,7 +4574,6 @@ function saveEditProfile() {
         bio: localStorage.getItem('cp_bio') || '',
         avatar: avSrc
       }, { merge: true }).catch(()=>{});
-    }
     }
   }
 
