@@ -2872,11 +2872,12 @@ async function submitPin(){
 
   const currentId   = myClickPinId || '@user';
   const currentName = myClickPinName || (myClickPinId ? myClickPinId.replace('@','') : 'You');
-  const savedAv     = localStorage.getItem('cp_avatar');
-  const avatarSeed  = Math.abs(currentId.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % 70 + 1;
+  // ✅ Always latest avatar — upload ke time snapshot mat lo
+  const latestAv = localStorage.getItem('cp_avatar');
+  const safeAv   = (latestAv && latestAv.startsWith('http')) ? latestAv : '';
   const currentUser = {
     name    : currentName,
-    avatar  : (savedAv && !savedAv.startsWith('data:')) ? savedAv : `https://i.pravatar.cc/60?img=${avatarSeed}`,
+    avatar  : safeAv,
     followers: '0'
   };
 
@@ -3359,6 +3360,17 @@ function createBoard() {
 
 // ─── APPLY FILTERS (main render) ───
 function applyFilters(){
+  // ✅ Grid render se pehle apni sab posts ka avatar update karo
+  const myName = (myClickPinName || localStorage.getItem('cp_user_name') || '').toLowerCase().trim();
+  const latestAv = localStorage.getItem('cp_avatar');
+  const safeAv = (latestAv && latestAv.startsWith('http')) ? latestAv : '';
+  if (myName && safeAv) {
+    PIN_DATA.forEach(p => {
+      if (p.user && p.user.name && p.user.name.toLowerCase().trim() === myName) {
+        p.user.avatar = safeAv;
+      }
+    });
+  }
   const q=document.getElementById('searchInput').value.toLowerCase().trim();
   let list=aTab==='explore'?[...PIN_DATA].sort(()=>Math.random()-.5):[...PIN_DATA];
   if(aCat!=='All')list=list.filter(p=>p.cat===aCat);
@@ -4567,18 +4579,41 @@ function saveEditProfile() {
   const avSrc = avEl ? avEl.src : '';
   if (avSrc && avSrc.startsWith('http') && !avSrc.includes('pravatar.cc')) {
     localStorage.setItem('cp_avatar', avSrc);
-    // Firestore mein bhi save karo
+
+    // ✅ Turant sab posts mein nai DP lagao
+    const myNameNow = (myClickPinName || '').toLowerCase().trim();
+    let updatedCount = 0;
+    PIN_DATA.forEach(p => {
+      if (p.user && p.user.name && p.user.name.toLowerCase().trim() === myNameNow) {
+        p.user.avatar = avSrc;
+        updatedCount++;
+      }
+    });
+    if (updatedCount > 0) applyFilters();
+
+    // Firestore — user doc update
     if (db && fbAuth && fbAuth.currentUser) {
-      db.collection('users').doc(fbAuth.currentUser.uid).set({
+      const uid = fbAuth.currentUser.uid;
+      db.collection('users').doc(uid).set({
         name: myClickPinName, cpid: myClickPinId,
         bio: localStorage.getItem('cp_bio') || '',
         avatar: avSrc
       }, { merge: true }).catch(()=>{});
+
+      // ✅ Firestore posts mein bhi avatar update karo (background)
+      db.collection('posts')
+        .where('userId', '==', uid)
+        .get()
+        .then(snap => {
+          snap.forEach(doc => {
+            doc.ref.update({ userAvatar: avSrc }).catch(()=>{});
+          });
+        }).catch(()=>{});
     }
   }
 
   closeEditProfileModal();
-  toast('✅ Profile update ho gaya!');
+  toast('✅ Profile update ho gaya! DP sab posts mein update ho gayi.');
   const pp = document.getElementById('profilePage');
   if (pp && pp.classList.contains('open')) openUserProfile();
   const sp = document.getElementById('settingsPage');
@@ -5796,9 +5831,15 @@ async function loadAllPostsFromFirestore() {
           if (ac.blocked) return;
         }
 
-        const safeAvatar = (sd.userAvatar && sd.userAvatar.startsWith('http'))
-          ? sd.userAvatar
-          : `https://i.pravatar.cc/60?img=${Math.floor(Math.random()*70)+1}`;
+        const myLatestAv = localStorage.getItem('cp_avatar');
+        const myUid = (fbAuth && fbAuth.currentUser) ? fbAuth.currentUser.uid : null;
+        // ✅ Apni post hai to latest avatar use karo, doosron ki post mein unka avatar
+        const isMyPost = myUid && sd.userId === myUid;
+        const safeAvatar = isMyPost && myLatestAv && myLatestAv.startsWith('http')
+          ? myLatestAv
+          : (sd.userAvatar && sd.userAvatar.startsWith('http'))
+            ? sd.userAvatar
+            : '';
 
         const newPost = {
           id              : sd.id || Date.now() + Math.random(),
