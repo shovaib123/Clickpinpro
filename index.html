@@ -1721,7 +1721,7 @@ function makeSponsoredCard(ad, imgH) {
 
 
 // ─── DATA ───
-const CATS=['All','Home','Fashion','Food','Travel','Art','Fitness','Technology','Nature','DIY','Beauty','Weddings','Islamic','Hindu','Christian','Buddhist','Sikh','Jain','Comedy','Sad','Quotes'];
+const CATS=['All','Home','Fashion','Food','Travel','News','Art','Fitness','Technology','Nature','DIY','Beauty','Weddings','Islamic','Hindu','Christian','Buddhist','Sikh','Jain','Comedy','Sad','Quotes'];
 const USERS_D=[
   {name:'Priya Sharma',  avatar:'https://i.pravatar.cc/60?img=1', followers:'2.3k'},
   {name:'Rohan Mehra',   avatar:'https://i.pravatar.cc/60?img=3', followers:'1.1k'},
@@ -1888,8 +1888,8 @@ window.addEventListener('popstate', (e) => {
 
 // ─── CATEGORIES ───
 function buildCatBar(){
-  const icons={All:'🏠',Home:'🏠',Fashion:'👗',Food:'🍽️',Travel:'✈️',Art:'🎨',Fitness:'💪',Technology:'💻',Nature:'🌿',DIY:'🛠️',Beauty:'💄',Weddings:'💒',Islamic:'☪️',Hindu:'🕉️',Christian:'✝️',Buddhist:'☸️',Sikh:'🪯',Jain:'🤲',Comedy:'😂',Sad:'😢',Quotes:'💬'};
-  const labels={All:'All',Home:'Home',Fashion:'Fashion',Food:'Food',Travel:'Travel',Art:'Art',Fitness:'Fitness',Technology:'Tech',Nature:'Nature',DIY:'DIY',Beauty:'Beauty',Weddings:'Weddings',Islamic:'Islamic',Hindu:'Hindu',Christian:'Christian',Buddhist:'Buddhist',Sikh:'Sikh',Jain:'Jain',Comedy:'Comedy',Sad:'Sad',Quotes:'Quotes'};
+  const icons={All:'🏠',Home:'🏠',Fashion:'👗',Food:'🍽️',Travel:'✈️',News:'📰',Art:'🎨',Fitness:'💪',Technology:'💻',Nature:'🌿',DIY:'🛠️',Beauty:'💄',Weddings:'💒',Islamic:'☪️',Hindu:'🕉️',Christian:'✝️',Buddhist:'☸️',Sikh:'🪯',Jain:'🤲',Comedy:'😂',Sad:'😢',Quotes:'💬'};
+  const labels={All:'All',Home:'Home',Fashion:'Fashion',Food:'Food',Travel:'Travel',News:'News',Art:'Art',Fitness:'Fitness',Technology:'Tech',Nature:'Nature',DIY:'DIY',Beauty:'Beauty',Weddings:'Weddings',Islamic:'Islamic',Hindu:'Hindu',Christian:'Christian',Buddhist:'Buddhist',Sikh:'Sikh',Jain:'Jain',Comedy:'Comedy',Sad:'Sad',Quotes:'Quotes'};
   document.getElementById('catBar').innerHTML=CATS.map(c=>`<button class="cat-pill${c===aCat?' active':''}" onclick="filterCat('${c}')">${icons[c]||''} ${labels[c]||c}</button>`).join('');
 }
 function filterCat(c){
@@ -4955,14 +4955,9 @@ function doLogin() {
 // ── 5. COMMENT / POST SPAM PROTECTION ──
 const _origPostComment = postComment;
 function postComment() {
-  // Rate limit check
-  if (!rateLimitCheck('comment', 10)) return; // 10 per minute (relaxed)
-
   const inp = document.getElementById('commentInput');
   const text = inp ? inp.value.trim() : '';
-
-  // Empty text — original function mein handle hoga
-  if (!text) { _origPostComment(); return; }
+  if (!text) return;
 
   // Script injection block karo
   if (/<script|javascript:/i.test(text)) {
@@ -5736,7 +5731,7 @@ function initFirebase() {
   fbAuth = firebase.auth();
 
   // ✅ PAGE LOAD PE SABKI POSTS LOAD KARO (login ke bina bhi)
-  setTimeout(() => loadAllPostsFromFirestore(), 1500);
+  setTimeout(() => loadAllPostsFromFirestore(), 300);
 
   // Auth state listener — jab bhi login/logout ho
   fbAuth.onAuthStateChanged(async (user) => {
