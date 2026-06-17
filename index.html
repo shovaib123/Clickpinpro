@@ -2268,17 +2268,23 @@ function _realBuildGrid(list){
       // ✅ src already .jpg thumbnail ho sakta hai — use it directly
       // agar src video URL hai toh vid se thumbnail banao
       let thumbSrc = '';
-      // ✅ Blob/local video = canvas capture; CDN video = thumbnail URL
-      const isReelBlob = !thumbSrc && vidSrc && (vidSrc.startsWith('blob:') || vidSrc.startsWith('data:video') || vidSrc.includes('b-cdn.net'));
+      // ✅ Canvas capture for: blob, data:video, Bunny CDN, OR src=mp4 (no real thumbnail)
+      const vidLooksLikeMp4 = (s) => s && (s.includes('.mp4') || s.includes('.webm') || s.includes('.mov') || s.includes('play_'));
+      const isReelBlob = !thumbSrc && vidSrc && (
+        vidSrc.startsWith('blob:') ||
+        vidSrc.startsWith('data:video') ||
+        vidSrc.includes('b-cdn.net') ||
+        vidLooksLikeMp4(vidSrc)
+      );
       if (isB64) {
         thumbSrc = p.src;
-      } else if (p.src && p.src.match(/\.(jpg|jpeg|png|webp)(\?.*)?$/i)) {
-        thumbSrc = p.src; // already a thumbnail image
+      } else if (!srcIsVideo && p.src && p.src.match(/\.(jpg|jpeg|png|webp)(\?.*)?$/i)) {
+        thumbSrc = p.src; // already a real image thumbnail
       } else if (isReelBlob) {
-        thumbSrc = ''; // canvas se capture hoga onload
+        thumbSrc = ''; // canvas se capture hoga
       } else {
-        // Bunny/CDN URL se thumbnail
-        thumbSrc = getCloudinaryThumb(p.vid || p.src || '', 400, 711);
+        // Try Bunny thumbnail.jpg
+        thumbSrc = getCloudinaryThumb(p.vid || (srcIsVideo ? p.src : ''), 400, 711);
       }
       const reelThumbId = `rthumb${p.id}`;
       media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">
@@ -2291,17 +2297,24 @@ function _realBuildGrid(list){
     } else if(p.type==='video'){
       const isB64 = p.src && p.src.startsWith('data:');
       const vidSrc = p.vid || p.src;
-      // ✅ Canvas capture for blob/CDN videos without thumbnail
-      const isVidBlob = !vThumb && vidSrc && (vidSrc.startsWith('blob:') || vidSrc.startsWith('data:video') || vidSrc.includes('b-cdn.net'));
+      // ✅ Canvas capture for: blob, Bunny CDN, mp4 URLs (no image thumbnail)
+      const vidLooks = (s) => s && (s.includes('.mp4') || s.includes('.webm') || s.includes('.mov') || s.includes('play_'));
+      const isVidBlob = !vThumb && vidSrc && (
+        vidSrc.startsWith('blob:') ||
+        vidSrc.startsWith('data:video') ||
+        vidSrc.includes('b-cdn.net') ||
+        vidLooks(vidSrc)
+      );
       let vThumb = '';
+      const vSrcIsVideo = p.src && (p.src.includes('.mp4') || p.src.includes('.webm') || p.src.includes('play_') || p.src.includes('b-cdn.net'));
       if (isB64) {
         vThumb = p.src;
-      } else if (p.src && p.src.match(/\.(jpg|jpeg|png|webp)(\?.*)?$/i)) {
-        vThumb = p.src; // already a thumbnail
+      } else if (!vSrcIsVideo && p.src && p.src.match(/\.(jpg|jpeg|png|webp)(\?.*)?$/i)) {
+        vThumb = p.src; // already a real image
       } else if (isVidBlob) {
-        vThumb = ''; // canvas se capture hoga
+        vThumb = ''; // canvas se capture
       } else {
-        vThumb = getCloudinaryThumb(p.vid || p.src || '', 400, imgH);
+        vThumb = getCloudinaryThumb(p.vid || (vSrcIsVideo ? p.src : ''), 400, imgH);
       }
       const vidThumbId = `vthumb${p.id}`;
       media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)">
@@ -6479,9 +6492,12 @@ async function loadAllPostsFromFirestore() {
       const raw = doc.data();
       // ✅ Sanitize Firestore data
       const sd = (typeof sanitizeFirestorePost === 'function') ? sanitizeFirestorePost(raw) : raw;
-      // ✅ Video posts: src = Bunny URL, may be empty if old format
-      const srcUrl = sd.src || sd.vid || '';
-      if (!srcUrl || srcUrl.startsWith('data:')) return;
+      // ✅ Video posts: use sd.src first, then raw vid as fallback
+      const rawVid = raw.vid || '';
+      const srcUrl = sd.src || sd.vid || rawVid || '';
+      if (!srcUrl || srcUrl.startsWith('data:') || srcUrl.startsWith('blob:')) return;
+      // ✅ For video: also restore vid from raw if sanitize dropped it
+      const finalVidUrl = sd.vid || rawVid || null;
 
       const exists = PIN_DATA.some(p => p.firestoreId === doc.id);
       if (!exists) {
@@ -6506,8 +6522,8 @@ async function loadAllPostsFromFirestore() {
           firestoreId     : doc.id,
           firestoreUserId : sd.userId || '',
           type            : sd.type || 'image',
-          src             : srcUrl,           // ✅ vid URL used as fallback
-          vid             : sd.vid || null,
+          src             : srcUrl,
+          vid             : finalVidUrl,  // ✅ raw vid URL preserved
           title           : sd.title || 'Post',
           desc            : sd.desc || '',
           cat             : sd.cat || 'Home',
@@ -6551,17 +6567,23 @@ async function loadUserPostsFromFirestore(uid, currentUser) {
     snapshot.forEach(doc => {
       const data = doc.data();
       // Support both old format (imageUrl) and new format (src)
-      const srcUrl = data.src || data.imageUrl || '';
-      if (!srcUrl) return;
+      // ✅ Video posts: src may be Bunny URL OR vid may have it
+      const srcUrl = data.src || data.imageUrl || data.vid || '';
+      if (!srcUrl || srcUrl.startsWith('data:') || srcUrl.startsWith('blob:')) return;
 
       const exists = PIN_DATA.some(p => p.firestoreId === doc.id);
       if (!exists) {
+        // ✅ Avatar — accept http AND base64
+        const _av = data.userAvatar || '';
+        const safeAv = (_av && (_av.startsWith('http') || _av.startsWith('data:image')))
+          ? _av : `https://i.pravatar.cc/60?img=1`;
+
         PIN_DATA.unshift({
           id              : data.id || parseInt(doc.id.substring(0,8), 16) || Date.now(),
           firestoreId     : doc.id,
           firestoreUserId : data.userId || '',
-          type            : data.type || 'image',
-          src             : srcUrl,
+          type            : data.type || (data.vid ? 'video' : 'image'),
+          src             : srcUrl,  // ✅ vid URL as fallback
           vid             : data.vid || null,
           title           : data.title || 'My Post',
           desc            : data.desc || '',
@@ -6569,9 +6591,7 @@ async function loadUserPostsFromFirestore(uid, currentUser) {
           likes           : data.likes || 0,
           user            : {
             name     : data.userName || currentUser.name,
-            avatar   : (data.userAvatar && !data.userAvatar.startsWith('data:') && data.userAvatar.startsWith('http'))
-              ? data.userAvatar
-              : `https://i.pravatar.cc/60?img=1`,
+            avatar   : safeAv,
             followers: '0'
           }
         });
