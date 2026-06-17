@@ -2196,10 +2196,40 @@ function _realBuildGrid(list){
   const cards=[];
   // ✅ Canvas thumbnail capture for local/blob videos
   function captureBlobThumb(videoEl, imgEl, pinId) {
-    // ✅ Each video gets its OWN unique canvas capture — no sharing
+    // ✅ Each video gets its OWN unique canvas capture
     try {
-      // If already captured, skip
+      // If already captured as real image, skip
       if (imgEl && imgEl.src && imgEl.src.startsWith('data:image')) return;
+
+      // ✅ For Bunny CDN videos — try thumbnail.jpg first (ready in ~30 sec)
+      if (videoEl.src && videoEl.src.includes('b-cdn.net') && imgEl) {
+        const guid = videoEl.src.match(/b-cdn\.net\/([a-f0-9\-]+)\//);
+        if (guid) {
+          const thumbUrl = `https://vz-6f0aaff7-ec7.b-cdn.net/${guid[1]}/thumbnail.jpg`;
+          // Try thumbnail — if it loads use it, otherwise fall through to canvas
+          const testImg = new Image();
+          testImg.onload = function() {
+            if (imgEl) { imgEl.src = thumbUrl; imgEl.style.display = 'block'; }
+            // Save to PIN_DATA
+            if (pinId !== undefined && !isNaN(pinId)) {
+              const pin = PIN_DATA.find(x => x.id === pinId);
+              if (pin && !pin.src) pin.src = thumbUrl;
+            }
+          };
+          testImg.onerror = function() {
+            // Bunny thumbnail not ready — retry after 10 sec
+            setTimeout(() => {
+              const t2 = new Image();
+              t2.onload = function() {
+                if (imgEl) { imgEl.src = thumbUrl; imgEl.style.display = 'block'; }
+              };
+              t2.src = thumbUrl + '?r=' + Date.now();
+            }, 10000);
+          };
+          testImg.src = thumbUrl;
+          // Still proceed with canvas as immediate fallback below
+        }
+      }
       const canvas = document.createElement('canvas');
       canvas.width = 400; canvas.height = 400;
       const ctx = canvas.getContext('2d');
@@ -2265,12 +2295,11 @@ function _realBuildGrid(list){
     if(p.type==='reel'){
       const isB64 = p.src && p.src.startsWith('data:');
       const vidSrc = p.vid || p.src || '';
-      // ✅ src already .jpg thumbnail ho sakta hai — use it directly
-      // agar src video URL hai toh vid se thumbnail banao
+      // ✅ srcIsVideo — src agar mp4/video URL hai toh image thumbnail nahi banega
+      const srcIsVideo = p.src && (p.src.includes('.mp4') || p.src.includes('.webm') || p.src.includes('.mov') || p.src.includes('play_') || p.src.includes('b-cdn.net'));
       let thumbSrc = '';
-      // ✅ Canvas capture for: blob, data:video, Bunny CDN, OR src=mp4 (no real thumbnail)
       const vidLooksLikeMp4 = (s) => s && (s.includes('.mp4') || s.includes('.webm') || s.includes('.mov') || s.includes('play_'));
-      const isReelBlob = !thumbSrc && vidSrc && (
+      const isReelBlob = vidSrc && (
         vidSrc.startsWith('blob:') ||
         vidSrc.startsWith('data:video') ||
         vidSrc.includes('b-cdn.net') ||
@@ -2283,7 +2312,6 @@ function _realBuildGrid(list){
       } else if (isReelBlob) {
         thumbSrc = ''; // canvas se capture hoga
       } else {
-        // Try Bunny thumbnail.jpg
         thumbSrc = getCloudinaryThumb(p.vid || (srcIsVideo ? p.src : ''), 400, 711);
       }
       const reelThumbId = `rthumb${p.id}`;
@@ -3317,10 +3345,10 @@ async function uploadToBunny(file) {
       throw new Error('Bunny upload video error ' + uploadRes.status + ': ' + t.substring(0,200));
     }
 
-    // Video URL — Bunny Stream player/iframe ya direct mp4
-    // Direct HLS/mp4: https://{CDN_HOST}/{guid}/play_720p.mp4 (processing ke baad)
-    // Instant thumbnail: https://{CDN_HOST}/{guid}/{time}.jpg
-    const videoUrl = `https://${BUNNY_CDN_HOST}/${videoGuid}/play_720p.mp4`;
+    // ✅ INSTANT URL — Bunny Stream original video (no processing wait)
+    // play_720p.mp4 needs 2-10 min processing — avoid it
+    // Use: https://{CDN_HOST}/{guid}/original — available IMMEDIATELY after upload
+    const videoUrl = `https://${BUNNY_CDN_HOST}/${videoGuid}/original`;
     return { url: videoUrl, guid: videoGuid, isVideo: true };
 
   } else {
@@ -6400,8 +6428,9 @@ function initFirebase() {
   db = firebase.firestore();
   fbAuth = firebase.auth();
 
-  // ✅ PAGE LOAD PE SABKI POSTS LOAD KARO (login ke bina bhi)
-  setTimeout(() => loadAllPostsFromFirestore(), 300);
+  // ✅ PAGE LOAD: Pehle dummy data render karo, phir Firestore load
+  applyFilters(); // Turant dummy posts dikha do
+  setTimeout(() => loadAllPostsFromFirestore(), 500);
 
   // Auth state listener — jab bhi login/logout ho
   fbAuth.onAuthStateChanged(async (user) => {
@@ -6534,27 +6563,19 @@ async function loadAllPostsFromFirestore() {
             followers: '0'
           }
         };
-        // ✅ Fresh (abhi uploaded) posts ke upar mat jaao — unshift sirf purane posts ke liye
-        // Naye posts seedhe end mein push karo taaki fresh upload top pe rahe
-        const hasFreshPost = PIN_DATA.some(p => p._isNew && Date.now() - (p._uploadTime||0) < 60000);
-        if (hasFreshPost) {
-          // Fresh post ke baad insert karo
-          const freshIdx = PIN_DATA.findIndex(p => !p._isNew);
-          if (freshIdx > 0) PIN_DATA.splice(freshIdx, 0, newPost);
-          else PIN_DATA.push(newPost);
-        } else {
-          PIN_DATA.unshift(newPost);
-        }
+        // ✅ Firestore posts unshift karo — latest pehle
+        PIN_DATA.unshift(newPost);
         added++;
       }
     });
 
-    if (added > 0) {
-      console.log('✅ Firestore se sabki', added, 'posts load hui');
-      applyFilters();
-    }
+    console.log('✅ Firestore posts processed:', added, 'new added, total PIN_DATA:', PIN_DATA.length);
+    // ✅ Hamesha applyFilters call karo — chahe added=0 ho
+    applyFilters();
   } catch(e) {
     console.error('All posts load fail:', e.message);
+    // Fallback — dummy data ke saath bhi render karo
+    applyFilters();
   }
 }
 
@@ -6608,12 +6629,8 @@ async function loadUserPostsFromFirestore(uid, currentUser) {
       .get();
 
     const added = processSnapshot(snapshot);
-    if (added > 0) {
-      console.log('✅ Firestore se', added, 'posts load hue');
-      applyFilters();
-    } else {
-      console.log('Koi nayi post nahi mili uid:', uid);
-    }
+    console.log('✅ User posts processed:', added, 'new, total:', PIN_DATA.length);
+    applyFilters(); // ✅ Always render
 
   } catch(e) {
     console.log('orderBy fail, trying without:', e.message);
