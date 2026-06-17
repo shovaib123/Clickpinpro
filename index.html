@@ -2195,32 +2195,40 @@ function _realBuildGrid(list){
   if(!list.length){el.innerHTML=`<div class="empty-state" style="column-span:all"><div class="empty-icon">🔍</div><h3>No posts found</h3><p style="color:var(--muted);font-size:14px">Try a different category or search</p></div>`;return;}
   const cards=[];
   // ✅ Canvas thumbnail capture for local/blob videos
-  function captureBlobThumb(videoEl, imgEl) {
+  function captureBlobThumb(videoEl, imgEl, pinId) {
+    // ✅ Each video gets its OWN unique canvas capture — no sharing
     try {
+      // If already captured, skip
+      if (imgEl && imgEl.src && imgEl.src.startsWith('data:image')) return;
       const canvas = document.createElement('canvas');
       canvas.width = 400; canvas.height = 400;
       const ctx = canvas.getContext('2d');
-      // ✅ Seek to 1 second for better thumbnail (not black frame at 0)
-      videoEl.currentTime = Math.min(1, (videoEl.duration || 2) * 0.1);
+      const seekTo = Math.min(1.5, Math.max(0.5, (videoEl.duration || 3) * 0.15));
+
       const doCapture = function() {
         try {
+          if (videoEl.videoWidth === 0) return; // not ready
           ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
           if (imgEl) { imgEl.src = dataUrl; imgEl.style.display = 'block'; }
-          // ✅ Save to PIN_DATA so thumbnail persists on re-render
-          if (imgEl && imgEl.id) {
-            const pinId = parseInt(imgEl.id.replace('rthumb','').replace('vthumb',''));
-            if (!isNaN(pinId)) {
-              const pin = PIN_DATA.find(x => x.id === pinId);
-              if (pin && !pin.src) pin.src = dataUrl;
-            }
+          // ✅ Save to PIN_DATA using explicit pinId (not parsed from DOM)
+          if (pinId !== undefined && !isNaN(pinId)) {
+            const pin = PIN_DATA.find(x => x.id === pinId);
+            if (pin && !pin.src) pin.src = dataUrl;
           }
         } catch(e) {}
       };
+
       videoEl.addEventListener('seeked', doCapture, { once: true });
-      videoEl.addEventListener('loadeddata', function() {
-        if (videoEl.readyState >= 2) doCapture();
-      }, { once: true });
+      videoEl.addEventListener('loadeddata', function onLD() {
+        videoEl.removeEventListener('loadeddata', onLD);
+        if (videoEl.readyState >= 2) {
+          videoEl.currentTime = seekTo;
+        }
+      });
+      if (videoEl.readyState >= 2) {
+        videoEl.currentTime = seekTo;
+      }
     } catch(e) {}
   }
 
@@ -2275,7 +2283,7 @@ function _realBuildGrid(list){
       const reelThumbId = `rthumb${p.id}`;
       media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">
         <img class="reel-thumb" id="${reelThumbId}" src="${thumbSrc}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:${thumbSrc?'block':'none'}" onerror="this.style.display='none'">
-        <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="${isReelBlob?'metadata':'none'}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0" ${isReelBlob?`onloadeddata="captureBlobThumb(this,document.getElementById('${reelThumbId}'))"`:''}></video>
+        <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="${isReelBlob?'metadata':'none'}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0" ${isReelBlob?`onloadeddata="captureBlobThumb(this,document.getElementById('${reelThumbId}'),${p.id})"`:''}></video>
         <div class="reel-badge">🎬 Reel</div>
         <div class="reel-dur">▶ 0:${String(15+p.id%45).padStart(2,'0')}</div>
         <div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div>
@@ -2297,7 +2305,7 @@ function _realBuildGrid(list){
       }
       const vidThumbId = `vthumb${p.id}`;
       media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)">
-        <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="${isVidBlob?'metadata':'none'}" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0" ${isVidBlob?`onloadeddata="captureBlobThumb(this,document.getElementById('${vidThumbId}'))"`:''}></video>
+        <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="${isVidBlob?'metadata':'none'}" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0" ${isVidBlob?`onloadeddata="captureBlobThumb(this,document.getElementById('${vidThumbId}'),${p.id})"`:''}></video>
         <img class="vid-thumb" id="${vidThumbId}" src="${vThumb}" style="height:${imgH}px;width:100%;object-fit:cover;display:${vThumb?'block':'none'}" alt="${p.title}" loading="lazy" onerror="this.style.display='none'">
         <div class="video-badge">🎥 Video</div>
         <div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div>
@@ -3398,7 +3406,8 @@ async function submitPin(){
   const currentName = myClickPinName || (myClickPinId ? myClickPinId.replace('@','') : 'You');
   // ✅ Always latest avatar — upload ke time snapshot mat lo
   const latestAv = localStorage.getItem('cp_avatar');
-  const safeAv   = (latestAv && latestAv.startsWith('http')) ? latestAv : '';
+  // ✅ Accept both http and base64 avatars
+  const safeAv = (latestAv && (latestAv.startsWith('http') || latestAv.startsWith('data:'))) ? latestAv : 'https://i.pravatar.cc/60?img=1';
   const currentUser = {
     name    : currentName,
     avatar  : safeAv,
@@ -3482,7 +3491,7 @@ async function submitPin(){
 
   // ✅ FIRESTORE SAVE — background mein karo (non-blocking)
   const loggedUser = JSON.parse(localStorage.getItem('cp_current_user') || 'null');
-  const isLocalFile2 = location.protocol === 'file:'
+  const isLocalFile2 = (location.protocol === 'file:' || location.protocol === 'content:')
     || location.hostname === 'localhost'
     || location.hostname === '127.0.0.1';
 
@@ -3513,14 +3522,19 @@ async function submitPin(){
 
         const srcToSave = (finalSrc && !finalSrc.startsWith('data:') && !finalSrc.startsWith('blob:')) ? finalSrc : '';
         const vidToSave = (finalVid && !finalVid.startsWith('data:') && !finalVid.startsWith('blob:')) ? finalVid : '';
-        if (!srcToSave) return;
+        // ✅ Video posts have empty srcToSave — use vidToSave to decide
+        if (!srcToSave && !vidToSave) return;
 
         const avatarToSave = (currentUser.avatar && !currentUser.avatar.startsWith('data:'))
           ? currentUser.avatar.substring(0, 300)
           : `https://i.pravatar.cc/60?img=${avatarSeed}`;
 
+        // ✅ For video posts, src may be empty — use vid as primary
+        const effectiveSrc = srcToSave || vidToSave;
         const docRef = await db.collection('posts').add({
-          id: np.id, type: np.type, src: srcToSave, vid: vidToSave,
+          id: np.id, type: np.type,
+          src: effectiveSrc,   // ✅ never empty — video URL used as fallback
+          vid: vidToSave,
           title: np.title, desc: np.desc, cat: np.cat, likes: 0,
           userId, userName: currentUser.name, userAvatar: avatarToSave,
           createdAt: new Date().toISOString()
@@ -3532,7 +3546,8 @@ async function submitPin(){
         try {
           const saved = JSON.parse(localStorage.getItem('cp_user_posts') || '[]');
           saved.unshift({ id: np.id, firestoreId: docRef.id, type: np.type,
-            src: srcToSave, vid: vidToSave, title: np.title, desc: np.desc,
+            src: effectiveSrc, vid: vidToSave,  // ✅ video URL as src fallback
+            title: np.title, desc: np.desc,
             cat: np.cat, likes: 0, userId, userName: currentUser.name,
             userAvatar: avatarToSave, createdAt: new Date().toISOString() });
           localStorage.setItem('cp_user_posts', JSON.stringify(saved.slice(0, 50)));
@@ -3882,22 +3897,37 @@ function createBoard() {
 
 // ─── APPLY FILTERS (main render) ───
 function applyFilters(){
-  // ✅ Grid render se pehle apni sab posts ka avatar update karo
-  const myName = (myClickPinName || localStorage.getItem('cp_user_name') || '').toLowerCase().trim();
-  const latestAv = localStorage.getItem('cp_avatar');
-  const safeAv = (latestAv && latestAv.startsWith('http')) ? latestAv : '';
-  if (myName && safeAv) {
-    PIN_DATA.forEach(p => {
-      if (p.user && p.user.name && p.user.name.toLowerCase().trim() === myName) {
-        p.user.avatar = safeAv;
-      }
-    });
+  try {
+    // ✅ Update own posts avatar — allow both http and base64
+    const myName = (myClickPinName || localStorage.getItem('cp_user_name') || '').toLowerCase().trim();
+    const latestAv = localStorage.getItem('cp_avatar');
+    // ✅ Accept both http URLs and base64 data URIs
+    const safeAv = (latestAv && (latestAv.startsWith('http') || latestAv.startsWith('data:'))) ? latestAv : '';
+    if (myName && safeAv) {
+      PIN_DATA.forEach(p => {
+        try {
+          if (p.user && p.user.name && p.user.name.toLowerCase().trim() === myName) {
+            p.user.avatar = safeAv;
+          }
+        } catch(e2) {}
+      });
+    }
+    const searchEl = document.getElementById('searchInput');
+    const q = searchEl ? searchEl.value.toLowerCase().trim() : '';
+    let list = aTab==='explore' ? [...PIN_DATA].sort(()=>Math.random()-.5) : [...PIN_DATA];
+    if(aCat !== 'All') list = list.filter(p => p.cat === aCat);
+    if(q) list = list.filter(p =>
+      (p.title||'').toLowerCase().includes(q) ||
+      (p.desc||'').toLowerCase().includes(q) ||
+      (p.cat||'').toLowerCase().includes(q) ||
+      (p.user && p.user.name && p.user.name.toLowerCase().includes(q))
+    );
+    buildGrid(list);
+  } catch(e) {
+    console.error('applyFilters error:', e);
+    // Fallback — try to render without filters
+    try { buildGrid([...PIN_DATA]); } catch(e2) {}
   }
-  const q=document.getElementById('searchInput').value.toLowerCase().trim();
-  let list=aTab==='explore'?[...PIN_DATA].sort(()=>Math.random()-.5):[...PIN_DATA];
-  if(aCat!=='All')list=list.filter(p=>p.cat===aCat);
-  if(q)list=list.filter(p=>p.title.toLowerCase().includes(q)||p.desc.toLowerCase().includes(q)||p.cat.toLowerCase().includes(q)||(p.user&&p.user.name.toLowerCase().includes(q)));
-  buildGrid(list);
 }
 
 // Infinite scroll via IntersectionObserver on last pin
@@ -5197,8 +5227,8 @@ function saveEditProfile() {
   // ✅ Avatar save - sirf http URLs, base64 nahi
   const avEl = document.getElementById('epAvPreview');
   const avSrc = avEl ? avEl.src : '';
-  if (avSrc && avSrc.startsWith('http') && !avSrc.includes('pravatar.cc')) {
-    // ✅ Pehle localStorage mein save karo
+  // ✅ Accept both http URLs and base64 data URIs for avatar
+  if (avSrc && (avSrc.startsWith('http') || avSrc.startsWith('data:image')) && !avSrc.includes('pravatar.cc')) {
     localStorage.setItem('cp_avatar', avSrc);
 
     // ✅ Turant sab posts mein nai DP lagao
@@ -5774,28 +5804,29 @@ try {
   if (savedPosts.length > 0) {
     let loadedCount = 0;
     savedPosts.forEach(p => {
-      // ✅ Sirf valid Cloudinary URLs — base64 ya empty skip karo
-      const srcOk = p.src
-        && !p.src.startsWith('data:')
-        && p.src.startsWith('http');
+      // ✅ Valid posts: http src OR http vid (for video posts)
+      const srcOk = (p.src && !p.src.startsWith('data:') && p.src.startsWith('http'))
+                 || (p.vid && !p.vid.startsWith('data:') && p.vid.startsWith('http'));
       const notExists = !PIN_DATA.some(x =>
         x.id === p.id ||
         (p.firestoreId && x.firestoreId === p.firestoreId)
       );
       if (srcOk && notExists) {
-        // ✅ avatar bhi base64 nahi hona chahiye
-        const safeAvatar = (p.userAvatar && !p.userAvatar.startsWith('data:') && p.userAvatar.startsWith('http'))
+        // ✅ avatar — http or base64 both allowed
+        const _storedAv = localStorage.getItem('cp_avatar') || '';
+        const safeAvatar = (p.userAvatar && p.userAvatar.startsWith('http') && !p.userAvatar.startsWith('data:'))
           ? p.userAvatar
-          : (localStorage.getItem('cp_avatar') && !localStorage.getItem('cp_avatar').startsWith('data:')
-              ? localStorage.getItem('cp_avatar')
-              : `https://i.pravatar.cc/60?img=1`);
+          : (_storedAv ? _storedAv : `https://i.pravatar.cc/60?img=1`);
+
+        // ✅ For video posts: use vid URL as src if src is empty
+        const effectiveSrc = (p.src && p.src.startsWith('http')) ? p.src : (p.vid || '');
 
         PIN_DATA.unshift({
           id             : p.id,
           firestoreId    : p.firestoreId || '',
           firestoreUserId: p.userId || '',
           type           : p.type || 'image',
-          src            : p.src,
+          src            : effectiveSrc,  // ✅ never empty for video
           vid            : p.vid || null,
           title          : p.title || 'My Post',
           desc           : p.desc || '',
@@ -6448,12 +6479,12 @@ async function loadAllPostsFromFirestore() {
       const raw = doc.data();
       // ✅ Sanitize Firestore data
       const sd = (typeof sanitizeFirestorePost === 'function') ? sanitizeFirestorePost(raw) : raw;
-      const srcUrl = sd.src || '';
+      // ✅ Video posts: src = Bunny URL, may be empty if old format
+      const srcUrl = sd.src || sd.vid || '';
       if (!srcUrl || srcUrl.startsWith('data:')) return;
 
       const exists = PIN_DATA.some(p => p.firestoreId === doc.id);
       if (!exists) {
-        // ✅ Adult content Firestore se bhi block karo
         if (typeof checkAdultContent === 'function') {
           const ac = checkAdultContent(sd.title || '', sd.desc || '', '');
           if (ac.blocked) return;
@@ -6461,20 +6492,21 @@ async function loadAllPostsFromFirestore() {
 
         const myLatestAv = localStorage.getItem('cp_avatar');
         const myUid = (fbAuth && fbAuth.currentUser) ? fbAuth.currentUser.uid : null;
-        // ✅ Apni post hai to latest avatar use karo, doosron ki post mein unka avatar
         const isMyPost = myUid && sd.userId === myUid;
-        const safeAvatar = isMyPost && myLatestAv && myLatestAv.startsWith('http')
+        // ✅ Accept base64 avatar too
+        const isValidAv = (av) => av && (av.startsWith('http') || av.startsWith('data:image'));
+        const safeAvatar = (isMyPost && isValidAv(myLatestAv))
           ? myLatestAv
-          : (sd.userAvatar && sd.userAvatar.startsWith('http'))
+          : isValidAv(sd.userAvatar)
             ? sd.userAvatar
-            : '';
+            : `https://i.pravatar.cc/60?img=1`;
 
         const newPost = {
           id              : sd.id || Date.now() + Math.random(),
           firestoreId     : doc.id,
           firestoreUserId : sd.userId || '',
           type            : sd.type || 'image',
-          src             : srcUrl,
+          src             : srcUrl,           // ✅ vid URL used as fallback
           vid             : sd.vid || null,
           title           : sd.title || 'Post',
           desc            : sd.desc || '',
