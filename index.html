@@ -3299,57 +3299,32 @@ async function uploadToBunny(file) {
   // Step 1 — Bunny Stream API pe video create karo (video ke liye)
   // Step 1 — Bunny Storage pe image upload karo (image ke liye)
   if (isVideo) {
-    // ── VIDEO: Bunny Stream API ──
-    // Step A: Create video object
-    let createRes;
+    // ── VIDEO: Cloudinary (instant URL + auto thumbnail) ──
+    const sizeMB2 = (uploadFile.size / (1024*1024)).toFixed(1);
+    toast('📤 Uploading video... ' + sizeMB2 + 'MB');
+    const formData = new FormData();
+    formData.append('file', uploadFile);
+    formData.append('upload_preset', 'clickpin_unsigned');
+    formData.append('resource_type', 'video');
+    let res;
     try {
-      createRes = await fetch(
-        `https://video.bunnycdn.com/library/${BUNNY_LIBRARY_ID}/videos`,
-        {
-          method: 'POST',
-          headers: {
-            'AccessKey': BUNNY_API_KEY,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          body: JSON.stringify({ title: uploadFile.name || 'showfy-video' })
-        }
+      res = await fetch(
+        'https://api.cloudinary.com/v1_1/dtmxr5eq7/video/upload',
+        { method: 'POST', body: formData }
       );
     } catch(e) {
-      throw new Error('Network error (create video): ' + e.message);
+      throw new Error('Network error (video upload): ' + e.message);
     }
-    if (!createRes.ok) {
-      const t = await createRes.text().catch(()=>'');
-      throw new Error('Bunny create video error ' + createRes.status + ': ' + t.substring(0,200));
+    if (!res.ok) {
+      const t = await res.text().catch(()=>'');
+      throw new Error('Video upload error ' + res.status + ': ' + t.substring(0,200));
     }
-    const createData = await createRes.json();
-    const videoGuid = createData.guid;
-    if (!videoGuid) throw new Error('No video GUID received from Bunny');
-
-    // Step B: Upload video file
-    let uploadRes;
-    try {
-      uploadRes = await fetch(
-        `https://video.bunnycdn.com/library/${BUNNY_LIBRARY_ID}/videos/${videoGuid}`,
-        {
-          method: 'PUT',
-          headers: { 'AccessKey': BUNNY_API_KEY },
-          body: uploadFile
-        }
-      );
-    } catch(e) {
-      throw new Error('Network error (upload video): ' + e.message);
-    }
-    if (!uploadRes.ok) {
-      const t = await uploadRes.text().catch(()=>'');
-      throw new Error('Bunny upload video error ' + uploadRes.status + ': ' + t.substring(0,200));
-    }
-
-    // ✅ INSTANT URL — Bunny Stream original video (no processing wait)
-    // play_720p.mp4 needs 2-10 min processing — avoid it
-    // Use: https://{CDN_HOST}/{guid}/original — available IMMEDIATELY after upload
-    const videoUrl = `https://${BUNNY_CDN_HOST}/${videoGuid}/original`;
-    return { url: videoUrl, guid: videoGuid, isVideo: true };
+    const data = await res.json();
+    if (data.error) throw new Error('Upload error: ' + data.error.message);
+    if (!data.secure_url) throw new Error('No URL received from server');
+    // ✅ Cloudinary auto-generates thumbnail from video
+    const videoUrl = data.secure_url;
+    return { url: videoUrl, guid: null, isVideo: true };
 
   } else {
     // ── IMAGE: Bunny Storage API ──
@@ -3481,11 +3456,19 @@ async function submitPin(){
       updateUploadPill('⚙️ Saving...', 80);
 
       if (isVidFile) {
-        // Video: Bunny Stream URL
         finalVid = bunnyResult.url;
-        // ✅ src = '' so canvas captures real first-frame thumbnail
-        // Canvas will auto-fill thumbnail when video loads
-        finalSrc = '';
+        // ✅ Cloudinary video — generate thumbnail from URL
+        if (bunnyResult.url && bunnyResult.url.includes('res.cloudinary.com')) {
+          // Convert video URL to thumbnail: replace extension with .jpg + add transform
+          const parts = bunnyResult.url.split('/upload/');
+          if (parts.length === 2) {
+            finalSrc = parts[0] + '/upload/so_1,w_400,h_711,c_fill,q_auto,f_jpg/' + parts[1].replace(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)(\?.*)?$/i, '.jpg');
+          } else {
+            finalSrc = ''; // canvas fallback
+          }
+        } else {
+          finalSrc = ''; // canvas fallback for other sources
+        }
       } else {
         // Image: data URL (instant, no network delay)
         finalSrc = bunnyResult.url;
@@ -3510,7 +3493,7 @@ async function submitPin(){
     src   : finalSrc,
     vid   : finalVid,
     title,
-    desc  : document.getElementById('pinDesc').value || 'Naya post',
+    desc  : document.getElementById('pinDesc').value || 'New post',
     cat   : document.getElementById('pinCat').value  || 'Home',
     likes : 0,
     user  : currentUser,
@@ -3967,7 +3950,8 @@ function applyFilters(){
   } catch(e) {
     console.error('applyFilters error:', e);
     // Fallback — try to render without filters
-    try { buildGrid([...PIN_DATA]); } catch(e2) {}
+    console.error('buildGrid fallback:', e);
+    try { buildGrid([...PIN_DATA]); } catch(e2) { console.error('buildGrid also failed:', e2); }
   }
 }
 
