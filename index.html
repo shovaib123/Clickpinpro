@@ -130,6 +130,8 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(255,
 .pin-user{display:flex;align-items:center;gap:7px}
 .pin-user img{width:23px;height:23px;border-radius:50%;object-fit:cover}
 .pin-user span{font-size:11px;font-weight:500;color:var(--muted)}
+.pin-time-dot{font-size:11px;color:var(--muted);margin:0 1px}
+.pin-time{font-size:10px;font-weight:500;color:var(--muted);opacity:.85}
 .pin-likes{font-size:11px;color:var(--muted)}
 
 /* AD IN GRID */
@@ -1669,6 +1671,7 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
       <div class="dz-icon" id="dzIcon">🖼️</div>
       <div class="dz-text" id="dzText">Click to choose a Photo or Video</div>
       <div class="dz-sub">Image: PNG JPG WEBP | Video/Reel: MP4 MOV</div>
+      <div class="dz-sub" id="dzVideoLimit" style="margin-top:4px;color:var(--red);font-weight:600;display:none">⏱️ Max 5 minutes · 📦 Max 12MB</div>
     </div>
     <img id="uploadPreviewImg" class="upload-preview-img" src="" alt="">
     <video id="uploadVideoPreview" class="upload-video-preview" controls></video>
@@ -1863,6 +1866,19 @@ let affSelectedPlatform = 'Amazon';
 let affUploadedImageSrc = '';
 
 function openAffiliateModal() {
+  // ✅ Daily limit check — warn early before user fills the form
+  const DAILY_AFF_LIMIT = 5;
+  const todayStart = new Date();
+  todayStart.setHours(0,0,0,0);
+  const myNameForLimit = (myClickPinName || localStorage.getItem('cp_user_name') || '').toLowerCase().trim();
+  const todaysCount = AFFILIATE_POSTS.filter(a => {
+    const isMine = a.user && a.user.name && a.user.name.toLowerCase().trim() === myNameForLimit;
+    return isMine && (a.addedAt || 0) >= todayStart.getTime();
+  }).length;
+  if (todaysCount >= DAILY_AFF_LIMIT) {
+    toast(`⚠️ Daily limit reached! You've already posted ${DAILY_AFF_LIMIT} affiliate products today. Try again tomorrow.`);
+    return;
+  }
   const el = document.getElementById('affiliateModal');
   if(el) el.classList.add('open');
 }
@@ -1945,6 +1961,21 @@ async function affSubmitPost() {
   if(!affUploadedImageSrc) { toast('⚠️ Please upload a product photo first!'); return; }
   if(!url || !url.startsWith('http')) { toast('⚠️ Product link is required!'); return; }
   if(!title) { toast('⚠️ Please enter the product name!'); return; }
+
+  // ✅ DAILY LIMIT — max 5 affiliate posts per day per user
+  const DAILY_AFF_LIMIT = 5;
+  const todayStart = new Date();
+  todayStart.setHours(0,0,0,0);
+  const todayStartMs = todayStart.getTime();
+  const myNameForLimit = (myClickPinName || localStorage.getItem('cp_user_name') || '').toLowerCase().trim();
+  const todaysCount = AFFILIATE_POSTS.filter(a => {
+    const isMine = a.user && a.user.name && a.user.name.toLowerCase().trim() === myNameForLimit;
+    return isMine && (a.addedAt || 0) >= todayStartMs;
+  }).length;
+  if (todaysCount >= DAILY_AFF_LIMIT) {
+    toast(`⚠️ Daily limit reached! You can post max ${DAILY_AFF_LIMIT} affiliate products per day. Try again tomorrow.`);
+    return;
+  }
 
   const btn = document.getElementById('affSubmitBtn');
   if(btn){ btn.textContent='⏳ Upload ho raha hai...'; btn.disabled=true; }
@@ -2288,6 +2319,11 @@ function _realBuildGrid(list){
           return `${parts[0]}/upload/so_1,w_${w},h_${h},c_fill,q_auto,f_jpg/${ver}${file}`;
         }
       }
+      // ✅ Agar URL video jaisa lagta hai (mp4/webm/mov) par koi pattern match nahi hua,
+      // toh kabhi bhi raw video URL ko image src mat banao — empty return karo (canvas capture fallback)
+      if (/\.(mp4|webm|mov|avi|mkv|m4v|3gp)(\?.*)?$/i.test(url) || url.includes('/video/')) {
+        return '';
+      }
       if (url.includes('?')) return url + `&w=${w}&h=${h}&auto=format&fit=crop`;
       return url + `?w=${w}&h=${h}&auto=format&fit=crop`;
     }
@@ -2296,13 +2332,14 @@ function _realBuildGrid(list){
       const isB64 = p.src && p.src.startsWith('data:');
       const vidSrc = p.vid || p.src || '';
       // ✅ srcIsVideo — src agar mp4/video URL hai toh image thumbnail nahi banega
-      const srcIsVideo = p.src && (p.src.includes('.mp4') || p.src.includes('.webm') || p.src.includes('.mov') || p.src.includes('play_') || p.src.includes('b-cdn.net'));
+      const srcIsVideo = p.src && (p.src.includes('.mp4') || p.src.includes('.webm') || p.src.includes('.mov') || p.src.includes('play_') || p.src.includes('b-cdn.net') || p.src.includes('cloudinary.com'));
       let thumbSrc = '';
-      const vidLooksLikeMp4 = (s) => s && (s.includes('.mp4') || s.includes('.webm') || s.includes('.mov') || s.includes('play_'));
+      const vidLooksLikeMp4 = (s) => s && (s.includes('.mp4') || s.includes('.webm') || s.includes('.mov') || s.includes('play_') || s.includes('cloudinary.com/video') || s.includes('b-cdn.net'));
       const isReelBlob = vidSrc && (
         vidSrc.startsWith('blob:') ||
         vidSrc.startsWith('data:video') ||
         vidSrc.includes('b-cdn.net') ||
+        vidSrc.includes('cloudinary.com/video') ||
         vidLooksLikeMp4(vidSrc)
       );
       if (isB64) {
@@ -2325,6 +2362,8 @@ function _realBuildGrid(list){
     } else if(p.type==='video'){
       const isB64 = p.src && p.src.startsWith('data:');
       const vidSrc = p.vid || p.src;
+      // ✅ vThumb declared FIRST — was used before declaration (ReferenceError) earlier
+      let vThumb = '';
       // ✅ Canvas capture for: blob, Bunny CDN, mp4 URLs (no image thumbnail)
       const vidLooks = (s) => s && (s.includes('.mp4') || s.includes('.webm') || s.includes('.mov') || s.includes('play_'));
       const isVidBlob = !vThumb && vidSrc && (
@@ -2333,8 +2372,7 @@ function _realBuildGrid(list){
         vidSrc.includes('b-cdn.net') ||
         vidLooks(vidSrc)
       );
-      let vThumb = '';
-      const vSrcIsVideo = p.src && (p.src.includes('.mp4') || p.src.includes('.webm') || p.src.includes('play_') || p.src.includes('b-cdn.net'));
+      const vSrcIsVideo = p.src && (p.src.includes('.mp4') || p.src.includes('.webm') || p.src.includes('play_') || p.src.includes('b-cdn.net') || p.src.includes('cloudinary.com/video'));
       if (isB64) {
         vThumb = p.src;
       } else if (!vSrcIsVideo && p.src && p.src.match(/\.(jpg|jpeg|png|webp)(\?.*)?$/i)) {
@@ -2389,7 +2427,7 @@ function _realBuildGrid(list){
       <button class="vsearch-btn" onclick="openVSearch(event,${p.id})" title="Visual search">🔍</button>
       <div class="pin-info"><div class="pin-title">${p.title}</div></div>
       <div class="pin-meta">
-        <div class="pin-user"><img src="${p.user.avatar}" alt="${p.user.name}"><span>${p.user.name}</span></div>
+        <div class="pin-user"><img src="${p.user.avatar}" alt="${p.user.name}"><span>${p.user.name}</span>${p._postTime ? `<span class="pin-time-dot">·</span><span class="pin-time">${formatRelativeTime(p._postTime)}</span>` : ''}</div>
         <span class="pin-likes">❤️ ${p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes}</span>
       </div>
     </div>`);
@@ -3060,7 +3098,10 @@ function switchUploadType(tp,btn){
   // Android me image/* or video/* alag karo lekin dono allow karo fallback ke liye
   document.getElementById('fileInput').accept = isVid ? 'video/*,video/mp4,video/quicktime' : 'image/*,image/jpeg,image/png,image/webp';
   document.getElementById('dzIcon').textContent = tp==='reel'?'🎬':tp==='video'?'🎥':'🖼️';
-  document.getElementById('dzText').textContent = tp==='reel'?'Vertical Reel chunein (9:16)':tp==='video'?'Video chunein (MP4/MOV)':'Photo chunein (PNG/JPG/WEBP)';
+  document.getElementById('dzText').textContent = tp==='reel'?'Choose a vertical Reel (9:16)':tp==='video'?'Choose a video (MP4/MOV)':'Choose a photo (PNG/JPG/WEBP)';
+  // ✅ Video/Reel select karne par limit warning dikhao
+  const limitEl = document.getElementById('dzVideoLimit');
+  if (limitEl) limitEl.style.display = isVid ? 'block' : 'none';
   // Reset preview
   document.getElementById('dropzone').style.display='block';
   document.getElementById('uploadPreviewImg').style.display='none';
@@ -3072,7 +3113,7 @@ function switchUploadType(tp,btn){
 async function trimVideoTo(file, maxSec) {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
-    video.muted = true;
+    video.muted = true; // ✅ playback mute (avoid feedback) — audio track captured separately below
     video.playsInline = true;
     const blobUrl = URL.createObjectURL(file);
     video.src = blobUrl;
@@ -3128,8 +3169,10 @@ async function trimVideoTo(file, maxSec) {
         return;
       }
 
+      let stopped = false;
       recorder.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
       recorder.onstop = () => {
+        stopped = true;
         URL.revokeObjectURL(blobUrl);
         stream.getTracks().forEach(t => t.stop());
         if (chunks.length === 0) { reject(new Error('No data recorded')); return; }
@@ -3141,14 +3184,19 @@ async function trimVideoTo(file, maxSec) {
         reject(new Error('Recorder error: ' + (e.error?.message || 'unknown')));
       };
 
-      // Start recording
+      // Start recording — ✅ HARD CAP: hamesha sirf first maxSec (300s = 5 min) tak record karo,
+      // chahe original video kitni bhi badi/lambi ho (1GB, 2 ghante — sab pe yeh same cap lagega)
       recorder.start(200); // collect every 200ms
       video.currentTime = 0;
       video.play().then(() => {
-        // Stop after maxSec
-        setTimeout(() => {
-          try { video.pause(); recorder.stop(); } catch(e) {}
+        const stopTimer = setTimeout(() => {
+          if (!stopped) { try { video.pause(); recorder.stop(); } catch(e) {} }
         }, maxSec * 1000);
+        // ✅ Safety: agar video duration maxSec se kam reh jaye (rounding), bhi stop ho jaye
+        video.addEventListener('ended', () => {
+          clearTimeout(stopTimer);
+          if (!stopped) { try { recorder.stop(); } catch(e) {} }
+        }, { once: true });
       }).catch(e => {
         reject(new Error('Video play failed: ' + e.message));
       });
@@ -3184,18 +3232,19 @@ function handleFileSelect(inp){
   const isVid = f.type.startsWith('video')
     || ['mp4','mov','webm','avi','mkv','m4v','3gp'].includes(ext);
 
-  // File size check — video too large will be trimmed
-  const maxSize = isVid ? 12 * 1024 * 1024 : 5 * 1024 * 1024;
-  if (f.size > maxSize) {
-    if (isVid) {
-      // ✅ Video too large — trim to 5 min (size reduces automatically)
-      toast('✂️ Large video (' + (f.size/1024/1024).toFixed(0) + 'MB) — trimming to first 5 minutes...');
-      // proceed
-    } else {
-      toast('⚠️ Image too large! Max 5MB allowed.');
-      upFile = null;
-      return;
-    }
+  // ✅ HARD LIMITS: Image max 5MB, Video max 12MB AND max 5 minutes
+  const maxImgSize = 5 * 1024 * 1024;
+  const maxVidSize = 12 * 1024 * 1024;
+  if (!isVid && f.size > maxImgSize) {
+    toast('⚠️ Image too large! Max 5MB allowed.');
+    upFile = null;
+    return;
+  }
+  if (isVid && f.size > maxVidSize) {
+    toast('⚠️ Video too large (' + (f.size/1024/1024).toFixed(1) + 'MB)! Maximum 12MB allowed. Please choose a smaller video.');
+    upFile = null;
+    document.getElementById('dropzone').style.display = 'block';
+    return;
   }
 
   // Type check
@@ -3233,25 +3282,16 @@ function handleFileSelect(inp){
       vEl.src = blobUrl;
       vEl.style.display = 'block';
       document.getElementById('uploadPreviewImg').style.display = 'none';
-      // ✅ Duration check — trim if longer than 5 min
-      vEl.onloadedmetadata = async function() {
+      // ✅ Duration check — 5 min se zyada hai toh seedha REJECT karo (no trimming — fast & simple)
+      vEl.onloadedmetadata = function() {
         if (vEl.duration > 300) {
-          toast('✂️ Video is ' + Math.floor(vEl.duration/60) + ' min — trimming to first 5 minutes...');
-          try {
-            const trimmedBlob = await trimVideoTo(upFile, 300);
-            const trimmedUrl = URL.createObjectURL(trimmedBlob);
-            URL.revokeObjectURL(blobUrl);
-            upFile = new File([trimmedBlob], upFile.name || 'video.webm', { type: trimmedBlob.type });
-            upData = trimmedUrl;
-            vEl.src = trimmedUrl;
-            toast('✅ Video trimmed to 5 minutes! Add a title and publish.');
-          } catch(trimErr) {
-            toast('⚠️ Trim failed: ' + trimErr.message + ' — Please use a shorter video.');
-            upFile = null; upData = null;
-            vEl.src = ''; vEl.style.display = 'none';
-            document.getElementById('dropzone').style.display = 'block';
-            URL.revokeObjectURL(blobUrl);
-          }
+          const mins = Math.floor(vEl.duration/60);
+          const secs = Math.floor(vEl.duration%60);
+          toast(`⚠️ Video too long (${mins}m ${secs}s)! Maximum 5 minutes allowed. Please choose a shorter video.`);
+          upFile = null; upData = null;
+          vEl.src = ''; vEl.style.display = 'none';
+          URL.revokeObjectURL(blobUrl);
+          document.getElementById('dropzone').style.display = 'block';
           return;
         }
         toast('✅ Video ready! Add a title and publish.');
@@ -3344,12 +3384,43 @@ async function uploadToBunny(file) {
     // SAFEST: Image ko bhi direct Bunny Stream pe upload karo as image file
     // Actually Bunny CDN has "Bunny Optimize" — ya hum base64 data URL use karte hain for images
 
-    // ✅ SIMPLE & RELIABLE: Image ke liye base64 Data URL use karo (jo pehle se ho raha tha)
-    // More isko seedha save karo — Cloudinary ki jagah
-    // Koi extra API nahi chahiye, instant thumbnail!
+    // ✅ Images: Cloudinary pe upload — instant CDN URL, Firestore mein save hoga
+    toast('📤 Uploading image...');
+    const imgFormData = new FormData();
+    imgFormData.append('file', uploadFile);
+    imgFormData.append('upload_preset', 'clickpin_unsigned');
+    let imgRes;
+    try {
+      imgRes = await fetch(
+        'https://api.cloudinary.com/v1_1/dtmxr5eq7/image/upload',
+        { method: 'POST', body: imgFormData }
+      );
+    } catch(e) {
+      // Network error — fallback to base64
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve({ url: ev.target.result, isVideo: false });
+        reader.onerror = () => reject(new Error('Image read error'));
+        reader.readAsDataURL(uploadFile);
+      });
+    }
+    if (!imgRes.ok) {
+      // Server error — fallback to base64
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve({ url: ev.target.result, isVideo: false });
+        reader.onerror = () => reject(new Error('Image read error'));
+        reader.readAsDataURL(uploadFile);
+      });
+    }
+    const imgData = await imgRes.json();
+    if (imgData.secure_url) {
+      return { url: imgData.secure_url, isVideo: false };
+    }
+    // Final fallback
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (e) => resolve({ url: e.target.result, isVideo: false });
+      reader.onload = (ev) => resolve({ url: ev.target.result, isVideo: false });
       reader.onerror = () => reject(new Error('Image read error'));
       reader.readAsDataURL(uploadFile);
     });
@@ -3435,11 +3506,10 @@ async function submitPin(){
   let finalSrc = isVideoType ? '' : (upData || '');
   let finalVid = isVideoType ? (upData || '') : null;
 
-  // ── LOCAL CHECK — sirf file:// aur localhost ──
+  // ── LOCAL CHECK — ye sirf Firebase Auth/Firestore ke liye hai ──
+  // Cloudinary upload local file (content://) pe bhi kaam karta hai — koi CORS issue nahi
   const proto2 = location.protocol;
-  const isLocalFile = (proto2 === 'file:' || proto2 === 'content:')
-    || location.hostname === 'localhost'
-    || location.hostname === '127.0.0.1';
+  const isLocalFile = false; // ✅ Cloudinary upload hamesha try karo, chahe local file ho ya hosted
 
   // ── CLOUDINARY UPLOAD ──
   const fileToUpload = upFile; // actual File object
@@ -3459,15 +3529,15 @@ async function submitPin(){
         finalVid = bunnyResult.url;
         // ✅ Cloudinary video — generate thumbnail from URL
         if (bunnyResult.url && bunnyResult.url.includes('res.cloudinary.com')) {
-          // Convert video URL to thumbnail: replace extension with .jpg + add transform
           const parts = bunnyResult.url.split('/upload/');
           if (parts.length === 2) {
-            finalSrc = parts[0] + '/upload/so_1,w_400,h_711,c_fill,q_auto,f_jpg/' + parts[1].replace(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)(\?.*)?$/i, '.jpg');
+            // ✅ so_0 = first frame, instant thumbnail
+            finalSrc = parts[0] + '/upload/so_0,w_400,h_711,c_fill,q_auto,f_jpg/' + parts[1].replace(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)(\?.*)?$/i, '.jpg');
           } else {
-            finalSrc = ''; // canvas fallback
+            finalSrc = '';
           }
         } else {
-          finalSrc = ''; // canvas fallback for other sources
+          finalSrc = '';
         }
       } else {
         // Image: data URL (instant, no network delay)
@@ -3498,7 +3568,8 @@ async function submitPin(){
     likes : 0,
     user  : currentUser,
     _isNew: true,
-    _uploadTime: Date.now()
+    _uploadTime: Date.now(),
+    _postTime: Date.now() // ✅ normalized timestamp for display (ms epoch)
   };
 
   // ✅ PEHLE POST DIKHAO — user ko wait mat karao
@@ -3514,12 +3585,10 @@ async function submitPin(){
   toast('🎉 Post publish ho gayi! ✅');
 
   // ✅ FIRESTORE SAVE — background mein karo (non-blocking)
+  // Local file pe bhi try karo — agar Firestore SDK load hua hai aur network hai, save hoga
   const loggedUser = JSON.parse(localStorage.getItem('cp_current_user') || 'null');
-  const isLocalFile2 = (location.protocol === 'file:' || location.protocol === 'content:')
-    || location.hostname === 'localhost'
-    || location.hostname === '127.0.0.1';
 
-  if (!isLocalFile2 && db) {
+  if (db) {
     // Background save — koi await nahi
     (async () => {
       try {
@@ -4957,6 +5026,51 @@ function switchProfileTab(tab, btn) {
   renderProfileTab(tab, '');
 }
 
+// ✅ TIME DISPLAY HELPERS — relative time + exact date/time
+function formatRelativeTime(ms) {
+  if (!ms) return '';
+  const diff = Date.now() - ms;
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return 'Just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return min + (min === 1 ? ' min ago' : ' mins ago');
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return hr + (hr === 1 ? ' hour ago' : ' hours ago');
+  const day = Math.floor(hr / 24);
+  if (day < 7) return day + (day === 1 ? ' day ago' : ' days ago');
+  const week = Math.floor(day / 7);
+  if (week < 4) return week + (week === 1 ? ' week ago' : ' weeks ago');
+  const month = Math.floor(day / 30);
+  if (month < 12) return month + (month === 1 ? ' month ago' : ' months ago');
+  const year = Math.floor(day / 365);
+  return year + (year === 1 ? ' year ago' : ' years ago');
+}
+function formatExactTime(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const day = d.getDate();
+  const month = months[d.getMonth()];
+  const year = d.getFullYear();
+  let hours = d.getHours();
+  const mins = d.getMinutes().toString().padStart(2,'0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12; if (hours === 0) hours = 12;
+  return `${day} ${month} ${year}, ${hours}:${mins} ${ampm}`;
+}
+// ✅ Tap par relative <-> exact time toggle karo
+function togglePostTime(el, ms) {
+  event.stopPropagation();
+  const isExact = el.getAttribute('data-exact') === '1';
+  if (isExact) {
+    el.textContent = formatRelativeTime(ms);
+    el.setAttribute('data-exact', '0');
+  } else {
+    el.textContent = formatExactTime(ms);
+    el.setAttribute('data-exact', '1');
+  }
+}
+
 function renderProfileTab(tab, query) {
   const el = document.getElementById('profileContent');
   const name = myClickPinName || 'Showfy User';
@@ -4984,9 +5098,11 @@ function renderProfileTab(tab, query) {
     }
     el.innerHTML = `<div class="profile-pins-grid">${pins.map(p => {
       const src = p.src.startsWith('data:') ? p.src : p.src.split('?')[0]+'?w=200&auto=format';
+      const timeLabel = p._postTime ? formatRelativeTime(p._postTime) : '';
       return `<div class="profile-pin-item" onclick="openDetail(${p.id})">
         <img src="${src}" alt="${p.title}" loading="lazy">
         ${p.type !== 'image' ? '<div style="position:absolute;top:6px;left:6px;background:rgba(0,0,0,.6);color:#fff;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">🎬</div>' : ''}
+        ${timeLabel ? `<div class="post-time-label" data-exact="0" onclick="togglePostTime(this,${p._postTime})" style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;border-radius:8px;padding:2px 7px;font-size:9px;font-weight:600;cursor:pointer">${timeLabel}</div>` : ''}
       </div>`;}).join('')}</div>`;
   } else if (tab === 'boards') {
     el.innerHTML = `<div class="profile-boards-grid">${BOARDS.map(b => {
@@ -5846,6 +5962,13 @@ try {
         // ✅ For video posts: use vid URL as src if src is empty
         const effectiveSrc = (p.src && p.src.startsWith('http')) ? p.src : (p.vid || '');
 
+        // ✅ Normalize timestamp for display
+        let postTimeMs3 = Date.now();
+        if (p.createdAt) {
+          const parsed = new Date(p.createdAt).getTime();
+          if (!isNaN(parsed)) postTimeMs3 = parsed;
+        }
+
         PIN_DATA.unshift({
           id             : p.id,
           firestoreId    : p.firestoreId || '',
@@ -5857,6 +5980,7 @@ try {
           desc           : p.desc || '',
           cat            : p.cat || 'Home',
           likes          : p.likes || 0,
+          _postTime      : postTimeMs3, // ✅ for "uploaded X ago" display
           user           : {
             name    : p.userName || myClickPinName || 'You',
             avatar  : safeAvatar,
@@ -6512,7 +6636,15 @@ async function loadAllPostsFromFirestore() {
       // ✅ For video: also restore vid from raw if sanitize dropped it
       const finalVidUrl = sd.vid || rawVid || null;
 
-      const exists = PIN_DATA.some(p => p.firestoreId === doc.id);
+      // ✅ Check duplicate by firestoreId OR by matching id (fresh upload already in PIN_DATA)
+      const existingPin = PIN_DATA.find(p => p.firestoreId === doc.id || (sd.id && p.id === sd.id));
+      if (existingPin) {
+        // ✅ Already in PIN_DATA (e.g. from fresh upload) — sirf firestoreId merge karo,
+        // _postTime aur baaki fields ko overwrite mat karo
+        if (!existingPin.firestoreId) existingPin.firestoreId = doc.id;
+        return;
+      }
+      const exists = false;
       if (!exists) {
         if (typeof checkAdultContent === 'function') {
           const ac = checkAdultContent(sd.title || '', sd.desc || '', '');
@@ -6530,6 +6662,19 @@ async function loadAllPostsFromFirestore() {
             ? sd.userAvatar
             : `https://i.pravatar.cc/60?img=1`;
 
+        // ✅ Normalize timestamp for display
+        let postTimeMs2 = Date.now();
+        if (raw.createdAt) {
+          if (typeof raw.createdAt === 'string') {
+            const parsed = new Date(raw.createdAt).getTime();
+            if (!isNaN(parsed)) postTimeMs2 = parsed;
+          } else if (raw.createdAt.toMillis) {
+            postTimeMs2 = raw.createdAt.toMillis();
+          } else if (raw.createdAt.seconds) {
+            postTimeMs2 = raw.createdAt.seconds * 1000;
+          }
+        }
+
         const newPost = {
           id              : sd.id || Date.now() + Math.random(),
           firestoreId     : doc.id,
@@ -6541,6 +6686,7 @@ async function loadAllPostsFromFirestore() {
           desc            : sd.desc || '',
           cat             : sd.cat || 'Home',
           likes           : sd.likes || 0,
+          _postTime       : postTimeMs2, // ✅ for "uploaded X ago" display
           user            : {
             name     : sd.userName || 'Showfy User',
             avatar   : safeAvatar,
@@ -6576,12 +6722,31 @@ async function loadUserPostsFromFirestore(uid, currentUser) {
       const srcUrl = data.src || data.imageUrl || data.vid || '';
       if (!srcUrl || srcUrl.startsWith('data:') || srcUrl.startsWith('blob:')) return;
 
-      const exists = PIN_DATA.some(p => p.firestoreId === doc.id);
+      // ✅ Check duplicate by firestoreId OR by matching id (fresh upload already in PIN_DATA)
+      const existingPin2 = PIN_DATA.find(p => p.firestoreId === doc.id || (data.id && p.id === data.id));
+      if (existingPin2) {
+        if (!existingPin2.firestoreId) existingPin2.firestoreId = doc.id;
+        return;
+      }
+      const exists = false;
       if (!exists) {
         // ✅ Avatar — accept http AND base64
         const _av = data.userAvatar || '';
         const safeAv = (_av && (_av.startsWith('http') || _av.startsWith('data:image')))
           ? _av : `https://i.pravatar.cc/60?img=1`;
+
+        // ✅ Normalize timestamp for display — ISO string ya Firestore Timestamp dono handle karo
+        let postTimeMs = Date.now();
+        if (data.createdAt) {
+          if (typeof data.createdAt === 'string') {
+            const parsed = new Date(data.createdAt).getTime();
+            if (!isNaN(parsed)) postTimeMs = parsed;
+          } else if (data.createdAt.toMillis) {
+            postTimeMs = data.createdAt.toMillis();
+          } else if (data.createdAt.seconds) {
+            postTimeMs = data.createdAt.seconds * 1000;
+          }
+        }
 
         PIN_DATA.unshift({
           id              : data.id || parseInt(doc.id.substring(0,8), 16) || Date.now(),
@@ -6594,6 +6759,7 @@ async function loadUserPostsFromFirestore(uid, currentUser) {
           desc            : data.desc || '',
           cat             : data.cat || 'Home',
           likes           : data.likes || 0,
+          _postTime       : postTimeMs, // ✅ for "uploaded X ago" display
           user            : {
             name     : data.userName || currentUser.name,
             avatar   : safeAv,
