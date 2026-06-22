@@ -78,6 +78,16 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(255,
 @media(max-width:1100px){.masonry-grid{columns:3}}
 @media(max-width:750px){.masonry-grid{columns:2}}
 @media(max-width:480px){.masonry-grid{columns:2;column-gap:9px}}
+/* ✅ JS-controlled explicit 2-column layout (mobile) — guaranteed equal
+   distribution regardless of card heights. Desktop (wider screens) still
+   uses native CSS columns for richer masonry look. */
+@media(max-width:750px){
+  .masonry-grid.js-split{columns:initial;display:flex;gap:9px;align-items:flex-start}
+  .masonry-grid.js-split .masonry-col{flex:1 1 50%;min-width:0;display:flex;flex-direction:column;gap:9px}
+  .masonry-grid.js-split .pin, .masonry-grid.js-split .affiliate-pin, .masonry-grid.js-split .sponsored-pin{
+    width:100%;margin-bottom:0;
+  }
+}
 /* ✅ Ensure pins always stack vertically — no horizontal scroll */
 .masonry-grid .pin, .masonry-grid .affiliate-pin, .masonry-grid .sponsored-pin{
   display:inline-block;width:100%;
@@ -712,6 +722,9 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
 .note-pin-preview strong{font-size:13px;color:var(--dark);display:block}
 .note-pin-preview span{font-size:11px;color:var(--muted)}
 .note-textarea{width:100%;border:1.5px solid #e8e8e8;border-radius:12px;padding:12px;font-size:14px;font-family:var(--font-body);resize:none;outline:none;min-height:100px;transition:border-color .2s;color:var(--dark)}
+.report-reason-btn{text-align:left;background:#f7f7f7;border:1.5px solid #eee;border-radius:12px;padding:12px 14px;font-size:13px;font-weight:600;color:var(--dark);cursor:pointer;transition:all .15s;font-family:var(--font-body)}
+.report-reason-btn:hover{background:#f0f0f0}
+.report-reason-btn.selected{background:rgba(230,0,35,.08);border-color:var(--red);color:var(--red)}
 .note-textarea:focus{border-color:var(--red)}
 .note-checklist{display:flex;flex-direction:column;gap:7px}
 .note-check-item{display:flex;align-items:center;gap:9px;background:#f8f8f8;border-radius:10px;padding:9px 12px}
@@ -1866,8 +1879,13 @@ let affSelectedPlatform = 'Amazon';
 let affUploadedImageSrc = '';
 
 function openAffiliateModal() {
+  // ✅ Copyright-strike check
+  if (typeof isAffiliateBlocked === 'function' && isAffiliateBlocked()) {
+    toast('🚫 Your affiliate access is temporarily restricted due to a copyright report. Contact support.');
+    return;
+  }
   // ✅ Daily limit check — warn early before user fills the form
-  const DAILY_AFF_LIMIT = 5;
+  const DAILY_AFF_LIMIT = 3;
   const todayStart = new Date();
   todayStart.setHours(0,0,0,0);
   const myNameForLimit = (myClickPinName || localStorage.getItem('cp_user_name') || '').toLowerCase().trim();
@@ -1954,6 +1972,11 @@ async function affHandleImageUpload(input) {
 // affFetchPreview removed — direct image upload se replace hua
 
 async function affSubmitPost() {
+  // ✅ Copyright-strike check — agar user ka affiliate access block hai
+  if (typeof isAffiliateBlocked === 'function' && isAffiliateBlocked()) {
+    toast('🚫 Your affiliate access is temporarily restricted due to a copyright report. Contact support.');
+    return;
+  }
   const url = document.getElementById('affLinkInput')?.value?.trim();
   const title = document.getElementById('affTitleInput')?.value?.trim();
   const price = document.getElementById('affPriceInput')?.value?.trim() || '';
@@ -1963,7 +1986,7 @@ async function affSubmitPost() {
   if(!title) { toast('⚠️ Please enter the product name!'); return; }
 
   // ✅ DAILY LIMIT — max 5 affiliate posts per day per user
-  const DAILY_AFF_LIMIT = 5;
+  const DAILY_AFF_LIMIT = 3;
   const todayStart = new Date();
   todayStart.setHours(0,0,0,0);
   const todayStartMs = todayStart.getTime();
@@ -1986,13 +2009,16 @@ async function affSubmitPost() {
   // Bunny upload optional (background mein pehle ho chuka hai)
 
   const platform = detectAffPlatform(url);
+  // ✅ Apni khud ki Amazon Associates Tracking ID link mein add karo
+  // (sirf apni ID — kisi doosre user ki ID kabhi force nahi hoti)
+  const finalUrl = addAffiliateTagToUrl(url, platform.name);
   const newAff = {
     id: 'aff_' + Date.now(),
     type: 'affiliate',
     img: finalImg,          // ✅ CDN URL ya base64 — dono kaam karte hain
     imgOriginal: affUploadedImageSrc, // in-memory backup
     title, price,
-    link: url,
+    link: finalUrl,
     platform: platform.name,
     platformIcon: platform.icon || '🛒',
     cta: 'Buy Now',
@@ -2003,6 +2029,11 @@ async function affSubmitPost() {
     user: { name: myClickPinName||'You', avatar: localStorage.getItem('cp_avatar')||'https://i.pravatar.cc/60?img=1', followers:'0' }
   };
   AFFILIATE_POSTS.unshift(newAff);
+
+  // ✅ Agar Amazon link hai aur Associates ID set nahi hai, user ko bata do
+  if (platform.name === 'Amazon' && !localStorage.getItem('cp_amazon_tag')) {
+    setTimeout(() => toast('💡 Tip: Add your Amazon Associates ID in Settings to earn commission!'), 4500);
+  }
 
   // localStorage mein base64 save karo (chhoti images ke liye) ya CDN URL
   try {
@@ -2420,6 +2451,7 @@ function _realBuildGrid(list){
           ${p.type!=='image'?`<button class="ov-btn" onclick="openReels(event,${p.id})" title="Reels mein dekho">🎬</button>`:''}
           <button class="ov-btn" onclick="openShareFor(event,${p.id})">📤</button>
           <button class="ov-btn" onclick="dlPin(event,${p.id})">⬇️</button>
+          <button class="ov-btn" onclick="openReportModal(event,${p.id})" title="Report">🚩</button>
         </div>
       </div>
       <button class="note-icon-btn" onclick="openNoteModal(event,${p.id})" title="Note Add">📝</button>
@@ -2433,9 +2465,36 @@ function _realBuildGrid(list){
     </div>`);
   });
   el.innerHTML=cards.join('');
+  // ✅ Mobile pe explicit 2-column split — CSS column-balance ke unpredictable
+  // height-based behavior se bachne ke liye (jisme consecutive same-type
+  // posts ek hi column mein chali jaati thi)
+  splitGridIntoColumns(el);
   // Hook scroll-based autoplay after render
   setTimeout(()=>{ observeVideoPins(); refreshDeleteButtons(); },100);
   } catch(e) { console.error('Grid render error:', e); }
+}
+
+// ✅ Grid ke direct children ko round-robin se 2 columns mein baant do (mobile only)
+function splitGridIntoColumns(el) {
+  try {
+    if (window.innerWidth > 750) {
+      el.classList.remove('js-split');
+      return; // desktop — native CSS columns rehne do
+    }
+    const children = Array.from(el.children);
+    if (children.length === 0) return;
+    el.classList.add('js-split');
+    const colLeft = document.createElement('div');
+    colLeft.className = 'masonry-col';
+    const colRight = document.createElement('div');
+    colRight.className = 'masonry-col';
+    children.forEach((child, idx) => {
+      (idx % 2 === 0 ? colLeft : colRight).appendChild(child);
+    });
+    el.innerHTML = '';
+    el.appendChild(colLeft);
+    el.appendChild(colRight);
+  } catch(e) { console.error('splitGridIntoColumns error:', e); }
 }
 // applyFilters moved to new infinite scroll version below
 function setTab(t,btn){aTab=t;aCat='All';document.querySelectorAll('.nav-tab').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active');buildCatBar();applyFilters();}
@@ -3717,7 +3776,51 @@ function renderReelsAdmin(){const r=PIN_DATA.filter(p=>p.type==='reel');document
 function renderFeedbackAdmin(){const ft=document.getElementById('fbt').value,fs=parseInt(document.getElementById('fbs').value)||0;let list=FDB.filter(f=>(!ft||f.type===ft)&&(!fs||f.stars===fs));document.getElementById('fb-stats').innerHTML=[{l:'Total',v:FDB.length,c:'#3b82f6',bg:'rgba(59,130,246,.1)',ic:'💬'},{l:'5 Star',v:FDB.filter(f=>f.stars===5).length,c:'#f59e0b',bg:'rgba(245,158,11,.1)',ic:'⭐'},{l:'Avg Rating',v:(FDB.reduce((a,f)=>a+f.stars,0)/Math.max(FDB.length,1)).toFixed(1),c:'#22c55e',bg:'rgba(34,197,94,.1)',ic:'📊'},{l:'This Week',v:FDB.filter(f=>new Date(f.date)>new Date(Date.now()-7*24*60*60*1000)).length,c:'#a855f7',bg:'rgba(168,85,247,.1)',ic:'🆕'}].map(s=>`<div class="stat-card" style="--sc-color:${s.c}"><div class="sc-ic" style="background:${s.bg}">${s.ic}</div><div class="sc-lbl">${s.l}</div><div class="sc-val">${s.v}</div></div>`).join('');document.getElementById('fb-list').innerHTML=list.map(f=>`<div class="fb-card"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:7px"><div>${sbdg(f.type)}</div><div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:#8888aa">${fD(f.date)}</span><button class="row-act" onclick="FDB=FDB.filter(x=>x.id!==${f.id});renderFeedbackAdmin();aToast('Deleted','success')">🗑</button></div></div><div class="fb-stars">${'⭐'.repeat(f.stars)}${'☆'.repeat(5-f.stars)}</div><div class="fb-text">${f.text}</div><div class="fb-meta">— ${f.name}</div></div>`).join('')||`<div style="text-align:center;color:#8888aa;padding:30px">No feedback yet</div>`;}
 function renderContacts(){const q=(document.getElementById('cq').value||'').toLowerCase(),fs=document.getElementById('cst').value;let list=CDB.filter(c=>(!q||c.name.toLowerCase().includes(q)||c.subject.toLowerCase().includes(q))&&(!fs||c.status===fs)).sort((a,b)=>new Date(b.date)-new Date(a.date));document.getElementById('con-stats').innerHTML=[{l:'Open',v:CDB.filter(c=>c.status==='open').length,c:'#E60023',bg:'rgba(230,0,35,.1)',ic:'🔴'},{l:'Replied',v:CDB.filter(c=>c.status==='replied').length,c:'#3b82f6',bg:'rgba(59,130,246,.1)',ic:'💬'},{l:'Resolved',v:CDB.filter(c=>c.status==='resolved').length,c:'#22c55e',bg:'rgba(34,197,94,.1)',ic:'✅'},{l:'Total',v:CDB.length,c:'#f59e0b',bg:'rgba(245,158,11,.1)',ic:'📬'}].map(s=>`<div class="stat-card" style="--sc-color:${s.c}"><div class="sc-ic" style="background:${s.bg}">${s.ic}</div><div class="sc-lbl">${s.l}</div><div class="sc-val">${s.v}</div></div>`).join('');document.getElementById('con-tb').innerHTML=list.map(c=>`<tr><td><div style="font-weight:600;font-size:12px;color:#f0f0f5">${c.name}</div><div style="font-size:11px;color:#8888aa">${c.email}</div></td><td style="font-weight:600;font-size:12px;color:#f0f0f5">${c.subject}</td><td style="max-width:140px;font-size:12px;color:#8888aa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.msg}</td><td>${sbdg(c.priority)}</td><td style="font-size:11px;color:#8888aa">${fD(c.date)}</td><td>${sbdg(c.status)}</td><td><button class="row-act ok" onclick="replyContact(${c.id})">↩</button><button class="row-act" onclick="CDB.find(x=>x.id===${c.id}).status='resolved';renderContacts();aToast('✅ Resolved','success')">✅</button><button class="row-act" onclick="CDB=CDB.filter(x=>x.id!==${c.id});renderContacts();aToast('🗑 Deleted','success')">🗑</button></td></tr>`).join('')||`<tr><td colspan="7" style="text-align:center;color:#8888aa;padding:20px">Koi message nahi</td></tr>`;updateAdminCounts();}
 function replyContact(id){const c=CDB.find(x=>x.id===id);const r=prompt(`Reply to ${c.name}:\nRe: ${c.subject}`);if(r){c.status='replied';renderContacts();aToast(`📨 Reply sent!`,'success');}}
-function renderReports(){document.getElementById('rep-stats').innerHTML=[{l:'Pending',v:RDB.filter(r=>r.status==='pending').length,c:'#E60023',bg:'rgba(230,0,35,.1)',ic:'🔴'},{l:'Actioned',v:RDB.filter(r=>r.status==='actioned').length,c:'#a855f7',bg:'rgba(168,85,247,.1)',ic:'⚡'},{l:'Dismissed',v:RDB.filter(r=>r.status==='dismissed').length,c:'#8888aa',bg:'rgba(136,136,170,.1)',ic:'🔕'},{l:'Total',v:RDB.length,c:'#3b82f6',bg:'rgba(59,130,246,.1)',ic:'📊'}].map(s=>`<div class="stat-card" style="--sc-color:${s.c}"><div class="sc-ic" style="background:${s.bg}">${s.ic}</div><div class="sc-lbl">${s.l}</div><div class="sc-val">${s.v}</div></div>`).join('');document.getElementById('rep-tb').innerHTML=RDB.map(r=>`<tr><td><span class="badge b-red">🚩 ${r.type}</span></td><td style="color:#f0f0f5;font-weight:600">${r.pin}</td><td style="color:#8888aa">${r.by}</td><td style="color:#8888aa;font-size:12px">${fD(r.date)}</td><td>${sbdg(r.status)}</td><td><button class="row-act" style="border-color:#a855f7;color:#a855f7" onclick="RDB.find(x=>x.id===${r.id}).status='actioned';renderReports();aToast('⚡ Action liya','success')">⚡</button><button class="row-act" onclick="RDB.find(x=>x.id===${r.id}).status='dismissed';renderReports();aToast('Dismissed','info')">🔕</button><button class="row-act" onclick="RDB=RDB.filter(x=>x.id!==${r.id});renderReports();aToast('🗑 Deleted','success')">🗑</button></td></tr>`).join('')||`<tr><td colspan="6" style="text-align:center;color:#8888aa;padding:20px">Koi report nahi ✅</td></tr>`;updateAdminCounts();}
+// ✅ Real user-submitted reports ko admin RDB mein sync karo
+function syncRealReportsIntoRDB() {
+  try {
+    const realReports = JSON.parse(localStorage.getItem('cp_reports') || '{}');
+    const hiddenIds = JSON.parse(localStorage.getItem('cp_hidden_pins') || '[]');
+    Object.keys(realReports).forEach(pinIdStr => {
+      const pinId = parseInt(pinIdStr);
+      const rd = realReports[pinIdStr];
+      const exists = RDB.some(r => r._realPinId === pinId);
+      if (exists) return; // already synced
+      const pin = (typeof PIN_DATA !== 'undefined') ? PIN_DATA.find(p => p.id === pinId) : null;
+      const topReason = Object.keys(rd.reasons||{}).sort((a,b)=>(rd.reasons[b]||0)-(rd.reasons[a]||0))[0] || 'other';
+      const reasonLabel = {copyright:'Copyright', spam:'Spam', inappropriate:'Inappropriate', other:'Other'}[topReason] || 'Other';
+      RDB.unshift({
+        id: 'real_' + pinId,
+        _realPinId: pinId,
+        _isRealReport: true,
+        type: reasonLabel,
+        pin: pin ? pin.title : ('Pin #' + pinId),
+        by: (rd.reporters||[]).length + ' user(s)',
+        status: hiddenIds.includes(pinId) ? 'actioned' : 'pending',
+        date: new Date().toISOString().slice(0,10)
+      });
+    });
+  } catch(e) { console.error('syncRealReportsIntoRDB error:', e); }
+}
+
+// ✅ Admin restore — auto-hidden post wapas feed mein laao + affiliate unblock karo
+function adminRestorePin(pinId) {
+  try {
+    let hidden = JSON.parse(localStorage.getItem('cp_hidden_pins') || '[]');
+    hidden = hidden.filter(id => id !== pinId);
+    localStorage.setItem('cp_hidden_pins', JSON.stringify(hidden));
+
+    const pin = (typeof PIN_DATA !== 'undefined') ? PIN_DATA.find(p => p.id === pinId) : null;
+    if (pin && pin.user && pin.user.name) {
+      let blocked = JSON.parse(localStorage.getItem('cp_aff_blocked_users') || '[]');
+      blocked = blocked.filter(u => u !== pin.user.name.toLowerCase().trim());
+      localStorage.setItem('cp_aff_blocked_users', JSON.stringify(blocked));
+    }
+    aToast('✅ Post restored & affiliate access unblocked', 'success');
+  } catch(e) {}
+}
+
+function renderReports(){syncRealReportsIntoRDB();document.getElementById('rep-stats').innerHTML=[{l:'Pending',v:RDB.filter(r=>r.status==='pending').length,c:'#E60023',bg:'rgba(230,0,35,.1)',ic:'🔴'},{l:'Actioned',v:RDB.filter(r=>r.status==='actioned').length,c:'#a855f7',bg:'rgba(168,85,247,.1)',ic:'⚡'},{l:'Dismissed',v:RDB.filter(r=>r.status==='dismissed').length,c:'#8888aa',bg:'rgba(136,136,170,.1)',ic:'🔕'},{l:'Total',v:RDB.length,c:'#3b82f6',bg:'rgba(59,130,246,.1)',ic:'📊'}].map(s=>`<div class="stat-card" style="--sc-color:${s.c}"><div class="sc-ic" style="background:${s.bg}">${s.ic}</div><div class="sc-lbl">${s.l}</div><div class="sc-val">${s.v}</div></div>`).join('');document.getElementById('rep-tb').innerHTML=RDB.map(r=>`<tr><td><span class="badge b-red">🚩 ${r.type}</span>${r._isRealReport?' <span style="font-size:9px;color:#22c55e;font-weight:700">LIVE</span>':''}</td><td style="color:#f0f0f5;font-weight:600">${r.pin}</td><td style="color:#8888aa">${r.by}</td><td style="color:#8888aa;font-size:12px">${fD(r.date)}</td><td>${sbdg(r.status)}</td><td>${r._isRealReport?`<button class="row-act ok" onclick="adminRestorePin(${r._realPinId});RDB.find(x=>x.id==='${r.id}').status='dismissed';renderReports();aToast('✅ Restored','success')">↩️ Restore</button><button class="row-act" onclick="RDB=RDB.filter(x=>x.id!=='${r.id}');renderReports();aToast('Removed from list','info')">🗑</button>`:`<button class="row-act" style="border-color:#a855f7;color:#a855f7" onclick="RDB.find(x=>x.id===${r.id}).status='actioned';renderReports();aToast('⚡ Action liya','success')">⚡</button><button class="row-act" onclick="RDB.find(x=>x.id===${r.id}).status='dismissed';renderReports();aToast('Dismissed','info')">🔕</button><button class="row-act" onclick="RDB=RDB.filter(x=>x.id!==${r.id});renderReports();aToast('🗑 Deleted','success')">🗑</button>`}</td></tr>`).join('')||`<tr><td colspan="6" style="text-align:center;color:#8888aa;padding:20px">No pending reports ✅</td></tr>`;updateAdminCounts();}
 function initAnalytics(){const mxU=Math.max(...AN.mU);document.getElementById('an-users').innerHTML=AN.mU.map((v,i)=>`<div class="mc-bar" style="height:${Math.round(v/mxU*100)}%;background:#3b82f6" title="${AN.mo[i]}: ${fN(v)}"></div>`).join('');const fbR=[3,3,4,4,4,5,4,5,5,4,4,4];document.getElementById('an-fb').innerHTML=fbR.map((v,i)=>`<div class="mc-bar" style="height:${Math.round(v/5*100)}%;background:#f59e0b" title="${AN.mo[i]}: ${v}★"></div>`).join('');}
 function changePw(){const np=document.getElementById('newPw').value,cp=document.getElementById('cnfPw').value;if(np.length<8){aToast('Min 8 characters','error');return;}if(np!==cp){aToast('Passwords match nahi','error');return;}aToast('🔑 Password changed!','success');document.getElementById('newPw').value='';document.getElementById('cnfPw').value='';}
 
@@ -4008,6 +4111,9 @@ function applyFilters(){
     const searchEl = document.getElementById('searchInput');
     const q = searchEl ? searchEl.value.toLowerCase().trim() : '';
     let list = aTab==='explore' ? [...PIN_DATA].sort(()=>Math.random()-.5) : [...PIN_DATA];
+    // ✅ Auto-hidden (3+ reports) posts ko feed se hatao
+    const hiddenIds = (typeof loadHiddenPins === 'function') ? loadHiddenPins() : [];
+    if (hiddenIds.length > 0) list = list.filter(p => !hiddenIds.includes(p.id));
     if(aCat !== 'All') list = list.filter(p => p.cat === aCat);
     if(q) list = list.filter(p =>
       (p.title||'').toLowerCase().includes(q) ||
@@ -4015,6 +4121,19 @@ function applyFilters(){
       (p.cat||'').toLowerCase().includes(q) ||
       (p.user && p.user.name && p.user.name.toLowerCase().includes(q))
     );
+    // ✅ Sirf Home tab pe newest-first sort + interleave karo.
+    // Explore tab apna random shuffle already kar chuka hai — usse mat chedo.
+    if (aTab !== 'explore') {
+      // Sabse naya upload hamesha top pe rahe — refresh ke baad bhi.
+      const timedPosts = list.filter(p => p._postTime);
+      const untimedPosts = list.filter(p => !p._postTime);
+      timedPosts.sort((a, b) => b._postTime - a._postTime);
+      list = [...timedPosts, ...untimedPosts];
+
+      // Video/Reel aur Image posts ko interleave karo taaki masonry ke
+      // dono columns mein videos equally distribute hon
+      list = interleaveByType(list);
+    }
     buildGrid(list);
   } catch(e) {
     console.error('applyFilters error:', e);
@@ -4022,6 +4141,12 @@ function applyFilters(){
     console.error('buildGrid fallback:', e);
     try { buildGrid([...PIN_DATA]); } catch(e2) { console.error('buildGrid also failed:', e2); }
   }
+}
+
+// ✅ Column distribution ab splitGridIntoColumns() handle karta hai render ke baad.
+// Yeh function sirf list order maintain karta hai (no-op pass-through).
+function interleaveByType(list) {
+  return list;
 }
 
 // Infinite scroll via IntersectionObserver on last pin
@@ -4078,8 +4203,15 @@ const _lastPinObs = new IntersectionObserver(entries=>{
     card.setAttribute('onclick',`openDetail(${p.id})`);
     card.setAttribute('onmouseenter',`hoverPlay(${p.id})`);
     card.setAttribute('onmouseleave',`hoverStop(${p.id})`);
-    card.innerHTML=media+`<div class="pin-overlay"><div class="overlay-top"><button class="save-btn${savedSet.has(p.id)?' saved':''}" onclick="tgSave(event,${p.id})">${savedSet.has(p.id)?'✔ Saved':'Save'}</button><button class="ov-btn del-btn" data-owner="${(p.user&&p.user.name)||''}" onclick="deletePin(event,${p.id})" title="Delete" style="background:rgba(220,38,38,.9);color:#fff;font-size:16px;display:none">🗑️</button></div><div class="overlay-bottom">${p.type!=='image'?`<button class="ov-btn" onclick="openReels(event,${p.id})">🎬</button>`:''}<button class="ov-btn" onclick="openShareFor(event,${p.id})">📤</button><button class="ov-btn" onclick="dlPin(event,${p.id})">⬇️</button></div></div><button class="note-icon-btn" onclick="openNoteModal(event,${p.id})" title="Note">📝</button>${pinNotes[p.id]?'<div class="note-dot"></div>':''}<button class="vsearch-btn" onclick="openVSearch(event,${p.id})" title="Visual search">🔍</button><div class="pin-info"><div class="pin-title">${p.title}</div></div><div class="pin-meta"><div class="pin-user"><img src="${p.user.avatar}" alt="${p.user.name}"><span>${p.user.name}</span></div><span class="pin-likes">❤️ ${p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes}</span></div>`;
-    grid.appendChild(card);
+    card.innerHTML=media+`<div class="pin-overlay"><div class="overlay-top"><button class="save-btn${savedSet.has(p.id)?' saved':''}" onclick="tgSave(event,${p.id})">${savedSet.has(p.id)?'✔ Saved':'Save'}</button><button class="ov-btn del-btn" data-owner="${(p.user&&p.user.name)||''}" onclick="deletePin(event,${p.id})" title="Delete" style="background:rgba(220,38,38,.9);color:#fff;font-size:16px;display:none">🗑️</button></div><div class="overlay-bottom">${p.type!=='image'?`<button class="ov-btn" onclick="openReels(event,${p.id})">🎬</button>`:''}<button class="ov-btn" onclick="openShareFor(event,${p.id})">📤</button><button class="ov-btn" onclick="dlPin(event,${p.id})">⬇️</button><button class="ov-btn" onclick="openReportModal(event,${p.id})" title="Report">🚩</button></div></div><button class="note-icon-btn" onclick="openNoteModal(event,${p.id})" title="Note">📝</button>${pinNotes[p.id]?'<div class="note-dot"></div>':''}<button class="vsearch-btn" onclick="openVSearch(event,${p.id})" title="Visual search">🔍</button><div class="pin-info"><div class="pin-title">${p.title}</div></div><div class="pin-meta"><div class="pin-user"><img src="${p.user.avatar}" alt="${p.user.name}"><span>${p.user.name}</span></div><span class="pin-likes">❤️ ${p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes}</span></div>`;
+    // ✅ Mobile pe column-split layout hai toh shortest column mein append karo
+    const cols = grid.querySelectorAll('.masonry-col');
+    if (cols.length === 2) {
+      const target = cols[0].offsetHeight <= cols[1].offsetHeight ? cols[0] : cols[1];
+      target.appendChild(card);
+    } else {
+      grid.appendChild(card);
+    }
   });
   setTimeout(()=>{ observeVideoPins(); refreshDeleteButtons(); },50);
   // Re-observe last pin
@@ -4537,23 +4669,6 @@ function patchPinDoubleTap() {
       if (e.target.closest('button') || e.target.closest('.pin-overlay')) return;
       handlePinTap(e, id);
     });
-
-    // ✅ LONG PRESS — delete bottom sheet dikhao
-    let longPressTimer = null;
-    let longPressFired = false;
-    pinEl.addEventListener('touchstart', (e) => {
-      if (e.target.closest('button')) return;
-      longPressFired = false;
-      longPressTimer = setTimeout(() => {
-        longPressFired = true;
-        const p = PIN_DATA.find(x => x.id === id);
-        if (!p) return;
-        if (navigator.vibrate) navigator.vibrate([30, 10, 30]);
-        showDeleteSheet(id);
-      }, 600);
-    }, { passive: true });
-    pinEl.addEventListener('touchend', () => { clearTimeout(longPressTimer); });
-    pinEl.addEventListener('touchmove', () => { clearTimeout(longPressTimer); });
   });
 }
 
@@ -4586,7 +4701,7 @@ function showDeleteSheet(id) {
       ` : ''}
       <button onclick="document.getElementById('_delSheet').remove();openShareFor(new Event('x'),${id})" style="width:100%;padding:14px;background:#f5f5f5;color:#333;border:none;border-radius:14px;font-size:15px;font-weight:600;margin-bottom:8px;cursor:pointer">📤 Share</button>
       <button onclick="document.getElementById('_delSheet').remove();tgSave(new Event('x'),${id})" style="width:100%;padding:14px;background:#f5f5f5;color:#333;border:none;border-radius:14px;font-size:15px;font-weight:600;margin-bottom:8px;cursor:pointer">🔖 Save</button>
-      <button onclick="document.getElementById('_delSheet').remove()" style="width:100%;padding:12px;background:none;color:#888;border:none;font-size:14px;cursor:pointer">Hata do</button>
+      <button onclick="document.getElementById('_delSheet').remove()" style="width:100%;padding:12px;background:none;color:#888;border:none;font-size:14px;cursor:pointer">Cancel</button>
     </div>`;
   sheet.addEventListener('click', (e) => { if (e.target === sheet) sheet.remove(); });
   document.body.appendChild(sheet);
@@ -5218,6 +5333,11 @@ function renderSettings() {
       </div>
       <button class="toggle si-toggle privacy-toggle ${isPrivate ? 'on' : ''}" onclick="event.stopPropagation();toggleAccountPrivacy(event)"></button>
     </div>
+    <div class="setting-item" onclick="${isLoggedIn ? 'openAffiliateSettingsModal()' : 'closeSettings();openSignInModal()'}">
+      <div class="si-ic" style="background:rgba(255,159,0,.1)">🛍️</div>
+      <div class="si-info"><div class="si-title">Affiliate Settings</div><div class="si-sub">${isLoggedIn ? (localStorage.getItem('cp_amazon_tag') ? '✅ Amazon ID linked' : 'Add your Amazon Associates ID') : 'Login to set up'}</div></div>
+      <span class="si-arrow">›</span>
+    </div>
 
     <div class="settings-section-title">Notifications</div>
     <div class="setting-item">
@@ -5433,6 +5553,172 @@ function openPasswordModal() {
 function closePasswordModal() {
   document.getElementById('passwordModal')?.classList.remove('open');
 }
+
+// ✅ AFFILIATE SETTINGS — har user apni khud ki Amazon Associates ID save kare
+function openAffiliateSettingsModal() {
+  const saved = localStorage.getItem('cp_amazon_tag') || '';
+  const inp = document.getElementById('amazonTagInput');
+  if (inp) inp.value = saved;
+  document.getElementById('affiliateSettingsModal')?.classList.add('open');
+}
+function closeAffiliateSettingsModal() {
+  document.getElementById('affiliateSettingsModal')?.classList.remove('open');
+}
+function saveAffiliateSettings() {
+  const raw = document.getElementById('amazonTagInput').value.trim();
+  // ✅ Basic validation — Amazon tracking IDs are alphanumeric + hyphens, usually end in -21 (India) etc.
+  if (raw && !/^[a-zA-Z0-9\-]{3,40}$/.test(raw)) {
+    toast('⚠️ Invalid Tracking ID format. Use only letters, numbers and hyphens.');
+    return;
+  }
+  if (raw) {
+    localStorage.setItem('cp_amazon_tag', raw);
+    toast('✅ Affiliate ID saved! It will be added to your future posts.');
+  } else {
+    localStorage.removeItem('cp_amazon_tag');
+    toast('Affiliate ID removed.');
+  }
+  closeAffiliateSettingsModal();
+  // Refresh settings panel sub-text if visible
+  if (typeof renderSettings === 'function') { try { renderSettings(); } catch(e) {} }
+}
+
+// ✅ Amazon link mein automatically user ki apni Tracking ID add karo
+function addAffiliateTagToUrl(url, platform) {
+  try {
+    if (!url) return url;
+    const tag = (localStorage.getItem('cp_amazon_tag') || '').trim();
+    if (!tag) return url; // ID nahi hai, link as-is jayega (commission kisi ko nahi milega)
+    if (platform === 'Amazon' || url.includes('amazon.') || url.includes('amzn.to')) {
+      const u = new URL(url);
+      u.searchParams.set('tag', tag);
+      return u.toString();
+    }
+    return url; // Flipkart/Meesho/Myntra/Other — alag affiliate program hote hain, abhi auto-tag nahi
+  } catch(e) {
+    return url; // invalid URL ho toh as-is return karo
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+// ✅ COPYRIGHT-STRIKE / CONTENT REPORTING SYSTEM
+// User content report kar sakte hain. 3 unique reports milne par
+// post auto-hide ho jaata hai aur uploader ka affiliate access
+// temporarily block ho jaata hai. Admin panel se review/restore hota hai.
+// ════════════════════════════════════════════════════════════
+const REPORT_THRESHOLD = 3; // itne unique reports par auto-action
+let _reportingPinId = null;
+let _reportingReason = null;
+
+function loadReports() {
+  try { return JSON.parse(localStorage.getItem('cp_reports') || '{}'); } catch(e) { return {}; }
+}
+function saveReports(reports) {
+  try { localStorage.setItem('cp_reports', JSON.stringify(reports)); } catch(e) {}
+}
+function loadHiddenPins() {
+  try { return JSON.parse(localStorage.getItem('cp_hidden_pins') || '[]'); } catch(e) { return []; }
+}
+function saveHiddenPins(arr) {
+  try { localStorage.setItem('cp_hidden_pins', JSON.stringify(arr)); } catch(e) {}
+}
+function loadBlockedAffiliateUsers() {
+  try { return JSON.parse(localStorage.getItem('cp_aff_blocked_users') || '[]'); } catch(e) { return []; }
+}
+function saveBlockedAffiliateUsers(arr) {
+  try { localStorage.setItem('cp_aff_blocked_users', JSON.stringify(arr)); } catch(e) {}
+}
+
+function openReportModal(e, id) {
+  e.stopPropagation();
+  if (!myClickPinName && !localStorage.getItem('cp_user_name')) {
+    toast('🔒 Please Sign In to report content');
+    return;
+  }
+  _reportingPinId = id;
+  _reportingReason = null;
+  document.querySelectorAll('.report-reason-btn').forEach(b => b.classList.remove('selected'));
+  const btn = document.getElementById('reportSubmitBtn');
+  if (btn) { btn.disabled = true; btn.style.background = '#ccc'; btn.style.cursor = 'not-allowed'; }
+  document.getElementById('reportModal')?.classList.add('open');
+}
+function closeReportModal() {
+  document.getElementById('reportModal')?.classList.remove('open');
+  _reportingPinId = null;
+  _reportingReason = null;
+}
+function selectReportReason(btn, reason) {
+  document.querySelectorAll('.report-reason-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  _reportingReason = reason;
+  const sbtn = document.getElementById('reportSubmitBtn');
+  if (sbtn) { sbtn.disabled = false; sbtn.style.background = 'var(--red)'; sbtn.style.cursor = 'pointer'; }
+}
+
+function submitReport() {
+  if (!_reportingPinId || !_reportingReason) return;
+  const pinId = _reportingPinId;
+  const reason = _reportingReason;
+  const myName = (myClickPinName || localStorage.getItem('cp_user_name') || 'Anonymous').toLowerCase().trim();
+
+  const reports = loadReports();
+  const key = String(pinId);
+  if (!reports[key]) reports[key] = { reasons: {}, reporters: [] };
+
+  // ✅ Ek user ek post ko sirf ek baar report kar sake (duplicate-proof)
+  if (reports[key].reporters.includes(myName)) {
+    toast('You have already reported this post.');
+    closeReportModal();
+    return;
+  }
+  reports[key].reporters.push(myName);
+  reports[key].reasons[reason] = (reports[key].reasons[reason] || 0) + 1;
+  saveReports(reports);
+
+  toast('🚩 Report submitted. Thank you for keeping Showfy safe.');
+  closeReportModal();
+
+  // ✅ THRESHOLD CHECK — auto-action
+  const uniqueReportCount = reports[key].reporters.length;
+  if (uniqueReportCount >= REPORT_THRESHOLD) {
+    autoActionOnPin(pinId, reports[key]);
+  }
+}
+
+function autoActionOnPin(pinId, reportData) {
+  // 1️⃣ Post ko feed se auto-hide karo
+  const hidden = loadHiddenPins();
+  if (!hidden.includes(pinId)) {
+    hidden.push(pinId);
+    saveHiddenPins(hidden);
+  }
+
+  // 2️⃣ Agar majority reason copyright hai, uploader ka affiliate access block karo
+  const reasons = reportData.reasons || {};
+  const topReason = Object.keys(reasons).sort((a,b) => reasons[b]-reasons[a])[0];
+  const pin = PIN_DATA.find(p => p.id === pinId);
+  if (topReason === 'copyright' && pin && pin.user && pin.user.name) {
+    const blocked = loadBlockedAffiliateUsers();
+    const uname = pin.user.name.toLowerCase().trim();
+    if (!blocked.includes(uname)) {
+      blocked.push(uname);
+      saveBlockedAffiliateUsers(blocked);
+    }
+  }
+
+  // 3️⃣ Feed re-render karo taaki hidden post turant gayab ho jaaye
+  applyFilters();
+  console.warn(`⚠️ Pin ${pinId} auto-hidden after ${reportData.reporters.length} reports. Reason: ${topReason}`);
+}
+
+// ✅ Affiliate post karne se pehle check karo ki user blocked hai ya nahi
+function isAffiliateBlocked() {
+  const myName = (myClickPinName || localStorage.getItem('cp_user_name') || '').toLowerCase().trim();
+  if (!myName) return false;
+  const blocked = loadBlockedAffiliateUsers();
+  return blocked.includes(myName);
+}
+
 function saveNewPassword() {
   const np = document.getElementById('pmNewPw').value;
   const cp = document.getElementById('pmConfPw').value;
@@ -6332,6 +6618,54 @@ try {
     <div style="display:flex;gap:8px">
       <button onclick="closePasswordModal()" style="flex:1;background:#f0f0f0;color:var(--dark);border:none;padding:12px;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer">Cancel</button>
       <button onclick="saveNewPassword()" style="flex:2;background:var(--red);color:#fff;border:none;padding:12px;border-radius:20px;font-size:14px;font-weight:700;cursor:pointer">🔑 Change</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ AFFILIATE SETTINGS MODAL ══════════ -->
+<div class="note-modal" id="affiliateSettingsModal" onclick="if(event.target===this)closeAffiliateSettingsModal()">
+  <div class="note-box" style="max-width:420px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <h3 style="font-family:var(--font-display);font-size:19px;font-weight:900;color:var(--dark)">🛍️ Affiliate Settings</h3>
+      <button onclick="closeAffiliateSettingsModal()" style="background:#f0f0f0;border:none;width:34px;height:34px;border-radius:50%;font-size:16px;cursor:pointer">✕</button>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.5">Add your own Amazon Associates Tracking ID so YOU earn commission from your affiliate posts — not anyone else.</p>
+
+    <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:5px">Amazon Associates Tracking ID</label>
+    <input id="amazonTagInput" type="text" class="note-textarea" style="min-height:auto;padding:10px 14px;border-radius:12px;font-size:14px;width:100%;box-sizing:border-box;margin-bottom:6px" placeholder="e.g. yourid-21">
+    <p style="font-size:11px;color:var(--muted);margin-bottom:16px">
+      Don't have one? <a href="https://affiliate-program.amazon.in" target="_blank" style="color:var(--red);font-weight:600">Create a free Amazon Associates account →</a>
+    </p>
+
+    <div style="background:#fff8f0;border:1px solid #ffe0b3;border-radius:12px;padding:12px;margin-bottom:18px">
+      <div style="font-size:12px;font-weight:700;color:#b45309;margin-bottom:4px">ℹ️ How this works</div>
+      <div style="font-size:11.5px;color:#92400e;line-height:1.5">Your Tracking ID is automatically added to every affiliate link you post. Commission from purchases made through your links goes to YOUR Amazon Associates account — Showfy never sees or touches that money.</div>
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <button onclick="closeAffiliateSettingsModal()" style="flex:1;background:#f0f0f0;color:var(--dark);border:none;padding:12px;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer">Cancel</button>
+      <button onclick="saveAffiliateSettings()" style="flex:2;background:var(--red);color:#fff;border:none;padding:12px;border-radius:20px;font-size:14px;font-weight:700;cursor:pointer">💾 Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ REPORT CONTENT MODAL ══════════ -->
+<div class="note-modal" id="reportModal" onclick="if(event.target===this)closeReportModal()">
+  <div class="note-box" style="max-width:400px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <h3 style="font-family:var(--font-display);font-size:19px;font-weight:900;color:var(--dark)">🚩 Report Content</h3>
+      <button onclick="closeReportModal()" style="background:#f0f0f0;border:none;width:34px;height:34px;border-radius:50%;font-size:16px;cursor:pointer">✕</button>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Why are you reporting this post?</p>
+    <div id="reportReasonsWrap" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+      <button class="report-reason-btn" onclick="selectReportReason(this,'copyright')">©️ Copyright violation (not their own content)</button>
+      <button class="report-reason-btn" onclick="selectReportReason(this,'spam')">🚫 Spam or misleading</button>
+      <button class="report-reason-btn" onclick="selectReportReason(this,'inappropriate')">⚠️ Inappropriate content</button>
+      <button class="report-reason-btn" onclick="selectReportReason(this,'other')">📋 Other</button>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="closeReportModal()" style="flex:1;background:#f0f0f0;color:var(--dark);border:none;padding:12px;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer">Cancel</button>
+      <button id="reportSubmitBtn" onclick="submitReport()" disabled style="flex:2;background:#ccc;color:#fff;border:none;padding:12px;border-radius:20px;font-size:14px;font-weight:700;cursor:not-allowed">🚩 Submit Report</button>
     </div>
   </div>
 </div>
