@@ -201,9 +201,9 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(255,
 .empty-state h3{font-family:var(--font-display);font-size:22px;margin-bottom:8px;color:var(--dark)}
 
 /* REELS FULLSCREEN */
-#reelsView{display:none;position:fixed;inset:0;z-index:300;background:#000;flex-direction:column;align-items:center}
+#reelsView{display:none;position:fixed;inset:0;z-index:300;background:#000;flex-direction:column;align-items:center;touch-action:pan-y}
 #reelsView.open{display:flex}
-.rs-scroll{width:100%;height:100vh;overflow-y:scroll;scroll-snap-type:y mandatory;scrollbar-width:none}
+.rs-scroll{width:100%;height:100vh;height:100dvh;overflow-y:scroll;scroll-snap-type:y mandatory;scrollbar-width:none;touch-action:pan-y}
 .rs-scroll::-webkit-scrollbar{display:none}
 /* Reels: phone-style on desktop, fullscreen on mobile */
 @media(min-width:600px){
@@ -226,7 +226,7 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(255,
 .rs-follow{background:transparent;border:1.5px solid #fff;color:#fff;padding:5px 14px;border-radius:18px;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s}.rs-follow.on{background:#fff;color:#000}
 .rs-caption{color:#fff;font-size:14px;line-height:1.6;margin-bottom:10px}
 .rs-tags{display:flex;flex-wrap:wrap;gap:7px}.rs-tag{color:rgba(255,255,255,.9);font-size:13px;font-weight:600}
-.rs-actions{position:absolute;right:12px;bottom:100px;z-index:10;display:flex;flex-direction:column;gap:22px;align-items:center}
+.rs-actions{position:absolute;right:12px;bottom:100px;z-index:10;display:flex;flex-direction:column;gap:20px;align-items:center}
 .rs-act{display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;cursor:pointer;color:#fff}
 .rs-act-ic{width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.16);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;font-size:22px;transition:all .15s;border:1px solid rgba(255,255,255,.1)}
 .rs-act:hover .rs-act-ic{background:rgba(255,255,255,.26);transform:scale(1.08)}
@@ -283,6 +283,12 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(255,
   overflow:hidden;
   border-radius:18px 0 0 18px;
   min-height:0;
+  -webkit-touch-callout:none; /* ✅ disable native long-press menu on iOS Safari */
+}
+.detail-media-col img, .detail-media-col video{
+  -webkit-touch-callout:none;
+  -webkit-user-select:none;
+  user-select:none;
 }
 .detail-media-col img{
   width:100%;
@@ -405,8 +411,9 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(255,
 .detail-user img{width:38px;height:38px;border-radius:50%;object-fit:cover}
 .detail-user strong{display:block;font-size:13px;color:var(--dark)}.detail-user small{color:var(--muted);font-size:11px}
 .follow-btn{margin-left:auto;background:none;border:2px solid var(--dark);padding:7px 15px;border-radius:24px;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s}.follow-btn:hover,.follow-btn.on{background:var(--dark);color:#fff}
-.detail-title{font-family:var(--font-display);font-size:21px;line-height:1.3;color:var(--dark)}
+.detail-title{font-family:var(--font-display);font-weight:700;font-size:22px;line-height:1.3;color:var(--dark)}
 .detail-desc{color:var(--muted);font-size:14px;line-height:1.65}
+.detail-desc.desc-truncated{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%}
 .detail-close{position:fixed;top:18px;right:18px;background:#fff;border:none;width:38px;height:38px;border-radius:50%;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.25);z-index:10011;transition:background .15s;font-weight:700}.detail-close:hover{background:#f0f0f0}
 @media(max-width:680px){.detail-box{flex-direction:column}.detail-left{width:100%;min-height:260px;max-height:44vh;flex-shrink:0}.detail-right{padding:14px;overflow-y:auto}}
 
@@ -860,6 +867,7 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
 /* Mobile: show bottom bar, compact search */
 @media(max-width:768px) {
   .bottom-nav { display:flex !important; }
+  .bottom-nav.force-hide { display:none !important; } /* ✅ reels/fullscreen overlays ke liye override */
   .search-wrap { max-width:none; flex:1; }
   
   
@@ -1118,10 +1126,11 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
 ══════════════════════════════════════ */
 .comments-drawer {
   display:none; position:fixed; inset:0; z-index:10004;
-  background:rgba(0,0,0,.55); backdrop-filter:blur(4px);
+  background:rgba(0,0,0,.35); backdrop-filter:blur(2px);
   align-items:flex-end; justify-content:center;
+  opacity:0; transition:opacity .25s ease;
 }
-.comments-drawer.open { display:flex; }
+.comments-drawer.open { display:flex; opacity:1; }
 .comments-sheet {
   background:#fff; border-radius:26px 26px 0 0;
   width:100%; max-width:640px;
@@ -1630,29 +1639,36 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
 <!-- DETAIL MODAL -->
 <div class="detail-modal" id="detailModal" onclick="if(event.target===this)closeDetail()">
   <div class="detail-box">
-    <div class="detail-media-col" id="detailMedia">
+    <div class="detail-media-col" id="detailMedia" oncontextmenu="return false">
       <!-- media injected here -->
     </div>
     <div class="detail-info-col">
-      <button class="det-close-btn" onclick="closeDetail()">✕</button>
-      <div class="detail-actions">
-        <button class="detail-save" id="detailSaveBtn" onclick="toggleDetailSave()">🔖 Save</button>
+      <button class="det-close-btn" onclick="goBack()">✕</button>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div class="detail-title" id="detailTitle"></div>
+        <div class="detail-desc desc-truncated" id="detailDesc"></div>
+        <span id="detailDescToggle" onclick="toggleDescReadMore()" style="display:none;color:#ec4899;font-size:13px;font-weight:700;cursor:pointer;width:fit-content">Read more</span>
+      </div>
+      <div class="detail-actions" style="position:relative">
         <button class="detail-download-btn" id="detailLikeBtn" onclick="likePost()" style="background:#fff0f1;border:1px solid #ffcdd2;color:#e53935">❤️ <span id="detailLikeCount">0</span></button>
+        <button class="detail-download-btn" onclick="openComments(openPinId)" style="background:#f0fff4;border:1px solid #bbf7d0;color:#15803d">💬 <span id="detailCommentCount">0</span></button>
         <button class="detail-share" onclick="openShareFromDetail()">📤 Share</button>
         <button class="detail-download-btn" onclick="dlFromDetail()">⬇️ Download</button>
-        <button class="detail-download-btn" onclick="saveToBoard(openPinId)" style="background:#fef9c3;border:1px solid #fde68a;color:#92400e">📂 Collection</button>
-        <button class="detail-download-btn" id="detailDeleteBtn" onclick="deleteFromDetail()" style="background:#fee2e2;border:1px solid #fecaca;color:#dc2626;display:none">🗑️ Delete</button>
-        <button class="detail-download-btn" onclick="openNoteModal(new Event('x'),openPinId)" style="background:#f0f8ff;border:1px solid #dbeafe;color:#1e40af">📝 Note</button>
-        <button class="detail-download-btn" onclick="openComments(openPinId)" style="background:#f0fff4;border:1px solid #bbf7d0;color:#15803d">💬 <span id="detailCommentCount">0</span></button>
+        <button class="detail-download-btn" id="detailMoreBtn" onclick="toggleDetailMoreMenu(event)" style="background:#f0f0f0;border:1px solid #e0e0e0;color:var(--dark);padding:10px 14px">⋮</button>
+        <div id="detailMoreMenu" style="display:none;position:absolute;top:calc(100% + 6px);right:0;background:#fff;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.15);overflow:hidden;z-index:50;min-width:170px">
+          <button class="detail-save" id="detailSaveBtn" onclick="toggleDetailSave();toggleDetailMoreMenu(event)" style="width:100%;text-align:left;background:none;border:none;padding:13px 16px;font-size:13px;font-weight:600;color:var(--dark);cursor:pointer;display:flex;align-items:center;gap:8px;border-radius:0">🔖 Save</button>
+          <button onclick="saveToBoard(openPinId);toggleDetailMoreMenu(event)" style="width:100%;text-align:left;background:none;border:none;padding:13px 16px;font-size:13px;font-weight:600;color:#92400e;cursor:pointer;display:flex;align-items:center;gap:8px">📂 Collection</button>
+          <button onclick="openNoteModal(new Event('x'),openPinId);toggleDetailMoreMenu(event)" style="width:100%;text-align:left;background:none;border:none;padding:13px 16px;font-size:13px;font-weight:600;color:#1e40af;cursor:pointer;display:flex;align-items:center;gap:8px">📝 Note</button>
+          <button onclick="reportFromDetail()" style="width:100%;text-align:left;background:none;border:none;padding:13px 16px;font-size:13px;font-weight:600;color:#dc2626;cursor:pointer;display:flex;align-items:center;gap:8px">🚩 Report</button>
+          <button class="detail-download-btn" id="detailDeleteBtn" onclick="deleteFromDetail();toggleDetailMoreMenu(event)" style="display:none;width:100%;text-align:left;background:none;border:none;padding:13px 16px;font-size:13px;font-weight:600;color:#dc2626;cursor:pointer;align-items:center;gap:8px;border-radius:0">🗑️ Delete</button>
+        </div>
       </div>
       <div class="detail-user">
         <img id="detailUserImg" src="" alt="">
         <div><strong id="detailUserName"></strong><small id="detailUserFol"></small></div>
         <button class="follow-btn" id="followBtn" onclick="handleFollow(this)">Follow</button>
-        <button id="bellBtn" title="Notifications" onclick="toggleBellNotif(this)" style="background:none;border:1.5px solid var(--border);border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer;transition:all .2s;display:none">🔔</button>
+        <button id="bellBtn" title="Notifications" onclick="toggleBellNotif(this)" style="background:#fff;border:1.5px solid #ec4899;border-radius:50%;width:36px;height:36px;font-size:16px;cursor:pointer;transition:all .2s;display:none;box-shadow:0 2px 8px rgba(236,72,153,.25)">🔔</button>
       </div>
-      <div class="detail-title" id="detailTitle"></div>
-      <div class="detail-desc" id="detailDesc"></div>
       <div class="ad-banner-top" style="margin:0;height:56px;border-radius:11px">📢 AD SLOT</div>
 
       <!-- MORE TO EXPLORE -->
@@ -1671,7 +1687,7 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
       <h2>📸 New Post Upload</h2>
       <div style="display:flex;gap:8px;align-items:center">
         <button onclick="minimizeUpload()" title="Minimize - upload in background" style="background:#f0f0f0;border:none;width:32px;height:32px;border-radius:50%;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center" title="Minimize">➖</button>
-        <button class="upload-close" onclick="closeUpload()">✕</button>
+        <button class="upload-close" onclick="goBack()">✕</button>
       </div>
     </div>
     <div class="upload-type-tabs">
@@ -1687,10 +1703,31 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
       <div class="dz-sub" id="dzVideoLimit" style="margin-top:4px;color:var(--red);font-weight:600;display:none">⏱️ Max 5 minutes · 📦 Max 12MB</div>
     </div>
     <img id="uploadPreviewImg" class="upload-preview-img" src="" alt="">
-    <video id="uploadVideoPreview" class="upload-video-preview" controls></video>
-    <input class="form-input" id="pinTitle" placeholder="Enter title (required)" maxlength="80">
+    <video id="uploadVideoPreview" class="upload-video-preview" controls playsinline></video>
+    <div id="reelSuggestBanner" style="display:none;margin:-4px 0 12px;padding:11px 13px;background:linear-gradient(135deg,rgba(236,72,153,.10),rgba(168,85,247,.10));border:1.5px solid rgba(236,72,153,.35);border-radius:12px">
+      <div style="font-size:12.5px;font-weight:600;color:var(--dark);line-height:1.5;margin-bottom:8px">💡 This video is under 1 minute! Short videos like this look much better in <b>Reel</b> format — full screen, with the swipe-feed.</div>
+      <div style="display:flex;gap:8px">
+        <button type="button" onclick="_switchSuggestedToReel()" style="flex:1;background:linear-gradient(135deg,#ec4899,#a855f7);border:none;border-radius:9px;padding:8px 10px;font-size:12.5px;font-weight:700;color:#fff;cursor:pointer">🎬 Use Reel format</button>
+        <button type="button" onclick="_dismissReelSuggest()" style="background:none;border:1px solid #ddd;border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--muted);cursor:pointer">No, keep as Video</button>
+      </div>
+    </div>
+    <div id="customThumbWrap" style="display:none;margin-top:10px">
+      <label style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">🖼️ Thumbnail (optional)</label>
+      <div style="display:flex;gap:10px;align-items:center">
+        <div id="customThumbPreviewWrap" style="width:64px;height:64px;border-radius:10px;background:#f0f0f0;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px dashed #ddd">
+          <img id="customThumbPreview" src="" alt="" style="display:none;width:100%;height:100%;object-fit:cover">
+          <span id="customThumbPlaceholder" style="font-size:22px;color:#bbb">📷</span>
+        </div>
+        <div style="flex:1">
+          <button type="button" onclick="document.getElementById('customThumbInput').click()" style="background:#f0f0f0;border:1px solid #ddd;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:600;color:var(--dark);cursor:pointer">Choose Thumbnail</button>
+          <div style="font-size:10.5px;color:var(--muted);margin-top:4px">Leave empty to auto-generate from video</div>
+        </div>
+        <input type="file" id="customThumbInput" accept="image/*" style="display:none" onchange="handleCustomThumbSelect(this)">
+      </div>
+    </div>
+    <input class="form-input" id="pinTitle" placeholder="Enter title (required)" maxlength="100">
     <textarea class="form-input" id="pinDesc" rows="2" placeholder="Description (optional)"></textarea>
-    <select class="form-input" id="pinCat"><option value="">Category chunein</option></select>
+    <select class="form-input" id="pinCat"><option value="">Choose category</option></select>
     <button class="publish-btn" onclick="submitPin()">🚀 Publish</button>
   </div>
 </div>
@@ -1738,20 +1775,19 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
   </div>
 </div>
 
-<button class="fab" onclick="openUpload()" title="Naya Pin">+</button>
+<button class="fab" onclick="openUpload()" title="New Pin">+</button>
 <div class="toast" id="mainToast"></div>
 
 <!-- ═══════════════════ ADMIN LOGIN ═══════════════════ -->
 <div id="adminLogin" style="display:none">
   <div class="login-box">
-    <div class="login-logo"><div class="login-icon">📌</div><div><span class="login-name">Click<span>Pin</span></span><div style="font-size:10px;color:#8888aa;letter-spacing:1px;font-weight:700;margin-top:1px">ADMIN PANEL</div></div></div>
+    <div class="login-logo"><div class="login-icon">📌</div><div><span class="login-name">Show<span>fy</span></span><div style="font-size:10px;color:#8888aa;letter-spacing:1px;font-weight:700;margin-top:1px">ADMIN PANEL</div></div></div>
     <div class="login-sub">Login with admin account</div>
-    <div class="login-hint">🔐 Demo: Username: <strong>admin</strong> &nbsp;|&nbsp; Password: <strong>showfy@2025</strong></div>
     <div class="login-err" id="loginErr">❌ Wrong credentials! Please try again.</div>
     <input class="login-field" id="lUser" type="text" placeholder="Username" autocomplete="off">
     <div class="pw-wrap"><input class="login-field" id="lPass" type="password" placeholder="Password"><button class="pw-eye" onclick="var f=document.getElementById('lPass');f.type=f.type==='password'?'text':'password'">👁</button></div>
-    <button class="login-btn" onclick="doLogin()">🔓 Login Karein</button>
-    <button class="back-to-site" onclick="showView('mainApp')">← Main Site par Wapas</button>
+    <button class="login-btn" onclick="doLogin()">🔓 Login</button>
+    <button class="back-to-site" onclick="showView('mainApp')">← Back to Main Site</button>
   </div>
 </div>
 
@@ -2001,7 +2037,7 @@ async function affSubmitPost() {
   }
 
   const btn = document.getElementById('affSubmitBtn');
-  if(btn){ btn.textContent='⏳ Upload ho raha hai...'; btn.disabled=true; }
+  if(btn){ btn.textContent='⏳ Uploading...'; btn.disabled=true; }
 
   // ✅ Cloudinary upload karo agar base64 hai
   let finalImg = affUploadedImageSrc;
@@ -2142,9 +2178,8 @@ let CDB=[
   {id:4,name:'Pooja Sharma',email:'pooja@g.com',subject:'Account Issue',msg:'I am unable to login.',status:'resolved',date:'2025-03-12',priority:'high'},
 ];
 let RDB=[
-  {id:1,type:'Spam',pin:'Summer Fashion Reel',by:'Deepak',status:'pending',date:'2025-03-16'},
-  {id:2,type:'Inappropriate',pin:'Bohemian Bedroom',by:'Neha',status:'actioned',date:'2025-03-14'},
-  {id:3,type:'Spam',pin:'Goa Sunset Reel',by:'Vikash',status:'pending',date:'2025-03-13'},
+  // ✅ Dummy/demo reports hata diye — sirf real user-submitted reports yahan dikhenge
+  // (syncRealReportsIntoRDB() automatically inject karta hai)
 ];
 let FDB=[
   {id:1,type:'compliment',stars:5,name:'Aarav Sharma',text:'Showfy ekdum amazing hai! Reels feature best hai, Instagram se bhi accha!',date:'2025-03-18'},
@@ -2158,7 +2193,7 @@ const AN={daily:[420,380,510,490,620,580,710,660,730,690,810,780,850,920],mU:[12
 
 // ─── STATE ───
 const AC={u:'admin',p:'showfy@2025'};
-let aCat='All',aTab='home',savedSet=new Set(),openPinId=null,sharePin=null;
+let aCat='All',aTab='home',savedSet=new Set(),likedSet=new Set(),openPinId=null,sharePin=null;
 let upType='image',upData=null,fbType=null,fbStars=0;
 const PER=6;let uPg=1,pPg=1;
 let deferredPrompt=null;
@@ -2193,49 +2228,103 @@ function showHome(){
 
 // ─── PWA ───
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;document.getElementById('installBtn').classList.add('show');setTimeout(()=>{if(!localStorage.getItem('cp_idismiss'))document.getElementById('installBanner').classList.add('show');},3000);});
-window.addEventListener('appinstalled',()=>{deferredPrompt=null;document.getElementById('installBtn').classList.remove('show');document.getElementById('installBanner').classList.remove('show');toast('✅ Showfy install ho gaya!');});
+window.addEventListener('appinstalled',()=>{deferredPrompt=null;document.getElementById('installBtn').classList.remove('show');document.getElementById('installBanner').classList.remove('show');toast('✅ Showfy installed!');});
 async function triggerInstall(){
   if(deferredPrompt){await deferredPrompt.prompt();const r=await deferredPrompt.userChoice;if(r.outcome==='accepted'){document.getElementById('installBanner').classList.remove('show');}deferredPrompt=null;document.getElementById('installBtn').classList.remove('show');}
   else{toast('📲 Browser menu → "Add to Home Screen"');}
 }
 function dismissInstall(){document.getElementById('installBanner').classList.remove('show');localStorage.setItem('cp_idismiss','1');}
 
-// ─── SERVICE WORKER (inline) ───
-if('serviceWorker' in navigator){
-  const swCode=`const C='cp-v1';self.addEventListener('install',e=>{self.skipWaiting();});self.addEventListener('activate',e=>{self.clients.claim();});self.addEventListener('fetch',e=>{e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));});`;
-  const blob=new Blob([swCode],{type:'text/javascript'});
-  navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});
+// ─── SERVICE WORKER — REMOVED ───
+// Pehle ek inline Service Worker register hota tha offline-caching ke liye,
+// lekin yeh content:// local files pe kaam nahi karta aur purane fixes ka
+// stale cache serve karne ka risk banata hai. Agar koi purana SW already
+// registered hai (purani file se), use bhi unregister kar do.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    regs.forEach(reg => reg.unregister());
+  }).catch(()=>{});
 }
 
 // ─── MOBILE BACK BUTTON (Android) ───
-// Initial state — pehle se ek state set karo
-try { history.replaceState({ s: 'home' }, '', location.pathname); } catch(e) {}
+// ✅ location.hash use karte hain navigation ke liye — pushState se zyada
+// universally supported hai (sandboxed/restricted environments mein bhi kaam karta hai).
+//
+// ✅ CRITICAL FIX: Pehle koi baseline '#home' entry set nahi hoti thi page load par.
+// Isse history stack mein sirf 1 hi entry hoti thi total — jab reel khulti
+// ('#reels' push hone se 2 entries ban jaati), pehla back press '#home' (no-hash)
+// pe le jaata, doosra press stack khaali kar deta aur APP EXIT ho jaata.
+//
+// Ab page load hote hi '#home' baseline set hota hai (replaceState se, naya
+// entry nahi banta) — taaki back-button hamesha '#home' pe surakshit land kare,
+// app kabhi exit na ho.
+try {
+  if (!location.hash) {
+    history.replaceState({ s: 'home' }, '', location.pathname + location.search + '#home');
+  }
+} catch(e) { /* silent fallback */ }
 
+// ✅ FIX: jab hum khud navigation karte hain (pushHistory se) to iss se
+// turant fire hone waala popstate/hashchange event khud ko hi "back button"
+// samajh ke abhi-abhi khuli hui view ko turant band kar deta tha — is se
+// history mein '#reels' jaisi entry kabhi save hi nahi hoti thi (turant
+// '#home' pe replace ho jaati thi), aur real back-button ke liye koi entry
+// bachti hi nahi thi. Ab is flag se apna khud ka navigation event ignore
+// karte hain, sirf genuine user back-press hi process hoti hai.
+let _isOwnNav = false;
 function pushHistory(state) {
-  try { history.pushState({ s: state }, '', location.pathname); } catch(e) {}
+  try {
+    if (location.hash !== '#' + state) {
+      _isOwnNav = true;
+      location.hash = state;
+      setTimeout(() => { _isOwnNav = false; }, 0);
+    }
+  } catch(e) { /* silent fallback */ }
 }
 
-window.addEventListener('popstate', (e) => {
-  const isOpen = (id) => { const el = document.getElementById(id); return el && el.classList.contains('open'); };
-  const isVisible = (id) => { const el = document.getElementById(id); return el && (el.style.display === 'flex' || el.style.display === 'block'); };
+let _backNavHandling = false;
+function _handleBackNav() {
+  if (_isOwnNav) return; // ✅ apna hi navigation hai, ise back-press mat maano
+  if (_backNavHandling) return; // duplicate calls avoid karo
+  _backNavHandling = true;
+  setTimeout(() => { _backNavHandling = false; }, 150);
 
-  if (isOpen('reelsView'))        { closeReels();       pushHistory('home');    return; }
-  if (isOpen('detailModal'))      { closeDetail();      pushHistory('home');    return; }
-  if (isOpen('settingsPage'))     { closeSettings();    pushHistory('profile'); return; }
-  if (isOpen('profilePage'))      { closeUserProfile(); setBn('home'); pushHistory('home'); return; }
-  if (isOpen('inboxPage'))        { closeInbox();       setBn('home'); pushHistory('home'); return; }
-  if (isOpen('boardDetailPage'))  { closeBoardDetail(); pushHistory('boards');  return; }
-  if (isOpen('boardsPage'))       { closeBoards();      pushHistory('home');    return; }
-  if (isOpen('shareModal'))       { closeShare();       pushHistory('home');    return; }
-  if (isOpen('commentsDrawer'))   { closeComments();    pushHistory('home');    return; }
-  if (isOpen('uploadModal'))      { closeUpload();      pushHistory('home');    return; }
-  if (isOpen('createSheetOverlay')){ closeCreateSheet(); pushHistory('home');   return; }
+  const isOpen = (id) => { const el = document.getElementById(id); return el && el.classList.contains('open'); };
+
+  // ✅ Sirf close karo — pushHistory() yahan kabhi call mat karo,
+  // history khud-ba-khud peeche move ho rahi hai is event ke through
+  if (isOpen('reelsView'))        { closeReels();       return; }
+  if (isOpen('detailModal'))      { closeDetail();      return; }
+  if (isOpen('settingsPage'))     { closeSettings();    return; }
+  if (isOpen('profilePage'))      { closeUserProfile(); setBn('home'); return; }
+  if (isOpen('inboxPage'))        { closeInbox();       setBn('home'); return; }
+  if (isOpen('boardDetailPage'))  { closeBoardDetail(); return; }
+  if (isOpen('boardsPage'))       { closeBoards();      return; }
+  if (isOpen('shareModal'))       { closeShare();       return; }
+  if (isOpen('commentsDrawer'))   { closeComments();    return; }
+  if (isOpen('uploadModal'))      { closeUpload();      return; }
+  if (isOpen('createSheetOverlay')){ closeCreateSheet(); return; }
   // Floating delete sheet
   const delSheet = document.getElementById('_delSheet');
-  if (delSheet) { delSheet.remove(); pushHistory('home'); return; }
-  // Koi bhi nahi — home
-  showHome();
-});
+  if (delSheet) { delSheet.remove(); return; }
+  // ✅ Koi modal open nahi hai — hum '#home' pe hi hain (baseline).
+  // Yahan agar koi bhi nahi mila, ensure karo hash '#home' hi rahe
+  // taaki agla back-press app exit na kare.
+  if (location.hash !== '#home') {
+    try { history.replaceState({ s: 'home' }, '', location.pathname + location.search + '#home'); } catch(e) {}
+  }
+}
+window.addEventListener('hashchange', _handleBackNav);
+window.addEventListener('popstate', _handleBackNav);
+
+// ✅ UNIVERSAL BACK HELPER — X/close buttons isko call karein, taaki history
+// stack hamesha sync rahe (chahe back-button se band karo ya X button se).
+// Yeh hash ko bhi wapas le jaata hai, jisse stack corrupt nahi hota.
+function goBack() {
+  if (location.hash && location.hash !== '#home' && location.hash !== '') {
+    history.back();
+  }
+}
 
 // ─── CATEGORIES ───
 function buildCatBar(){
@@ -2248,6 +2337,39 @@ function filterCat(c){
   buildCatBar();
   window.scrollTo({top: 0, behavior:'smooth'});
   applyFilters();
+}
+
+// ✅ Video/Reel duration label — agar upload ke time asli video length record
+// hui ho (p._duration), to wahi minutes:seconds mein dikhta hai. Warna
+// (jaise purani demo/seed pins jinki real duration store nahi hui) ek
+// consistent per-post fallback duration dikhta hai.
+// ✅ FIX: Bunny.net (aur kabhi Cloudinary) ka thumbnail file, video encoding
+// khatam hone ke turant baad bhi kuch second extra le sakta hai ban-ne mein.
+// Pehle thumbnail sirf EK BAAR try hota tha — fail hone par hamesha ke liye
+// chhup jaata tha (jab tak poora page/grid dobara render na ho). Ab ye
+// multiple baar (badhte hue delay ke saath) retry karta hai, taaki naya
+// upload hote hi turant sahi thumbnail dikhe, bina video khole/wapas aaye.
+function _retryThumbLoad(imgEl, attempt){
+  attempt = attempt || 1;
+  if (attempt > 5) return; // 5 attempts ke baad give up (kuch aur hi galat hai)
+  const delay = attempt * 2000; // 2s, 4s, 6s, 8s, 10s
+  setTimeout(() => {
+    if (!imgEl || !imgEl.isConnected) return; // element hata diya gaya ho to skip
+    const base = imgEl.getAttribute('data-thumb-base') || imgEl.src.split('?')[0];
+    imgEl.setAttribute('data-thumb-base', base);
+    imgEl.onerror = () => _retryThumbLoad(imgEl, attempt + 1);
+    imgEl.src = base + '?r=' + Date.now();
+    imgEl.style.display = 'block';
+  }, delay);
+}
+
+function _pinDurLabel(p){
+  if (typeof p._duration === 'number' && p._duration > 0) {
+    const totalSec = Math.floor(p._duration);
+    const m = Math.floor(totalSec / 60), s = totalSec % 60;
+    return m + ':' + String(s).padStart(2,'0');
+  }
+  return '0:' + String(15 + p.id % 45).padStart(2,'0');
 }
 
 // ─── GRID ───
@@ -2265,9 +2387,12 @@ function _realBuildGrid(list){
 
       // ✅ For Bunny CDN videos — try thumbnail.jpg first (ready in ~30 sec)
       if (videoEl.src && videoEl.src.includes('b-cdn.net') && imgEl) {
-        const guid = videoEl.src.match(/b-cdn\.net\/([a-f0-9\-]+)\//);
-        if (guid) {
-          const thumbUrl = `https://vz-6f0aaff7-ec7.b-cdn.net/${guid[1]}/thumbnail.jpg`;
+        // ✅ FIX: hostname bhi URL se hi nikalo (pehle hardcoded galat library
+        // ka hostname tha — isliye har video ka thumbnail EK HI (galat) jagah
+        // se aata tha, chahe guid alag-alag ho)
+        const guidMatch = videoEl.src.match(/https?:\/\/([a-z0-9\-]+\.b-cdn\.net)\/([a-f0-9\-]+)\//i);
+        if (guidMatch) {
+          const thumbUrl = `https://${guidMatch[1]}/${guidMatch[2]}/thumbnail.jpg`;
           // Try thumbnail — if it loads use it, otherwise fall through to canvas
           const testImg = new Image();
           testImg.onload = function() {
@@ -2336,9 +2461,12 @@ function _realBuildGrid(list){
         return url.includes('?') ? url + `&w=${w}&h=${h}&fit=crop` : url + `?w=${w}&h=${h}&fit=crop`;
       }
       // Bunny CDN video → thumbnail (auto-generated)
+      // ✅ FIX: hostname bhi URL se hi nikalo (pehle hardcoded galat library
+      // ka hostname tha — isi wajah se saare videos ka thumbnail same (galat)
+      // jagah se aata tha, guid alag hone ke bawajood)
       if (url.includes('b-cdn.net')) {
-        const m = url.match(/b-cdn\.net\/([a-f0-9\-]+)\//);
-        if (m) return `https://vz-6f0aaff7-ec7.b-cdn.net/${m[1]}/thumbnail.jpg`;
+        const m = url.match(/https?:\/\/([a-z0-9\-]+\.b-cdn\.net)\/([a-f0-9\-]+)\//i);
+        if (m) return `https://${m[1]}/${m[2]}/thumbnail.jpg`;
       }
       // Cloudinary video → thumbnail
       if (url.includes('res.cloudinary.com')) {
@@ -2365,29 +2493,25 @@ function _realBuildGrid(list){
       // ✅ srcIsVideo — src agar mp4/video URL hai toh image thumbnail nahi banega
       const srcIsVideo = p.src && (p.src.includes('.mp4') || p.src.includes('.webm') || p.src.includes('.mov') || p.src.includes('play_') || p.src.includes('b-cdn.net') || p.src.includes('cloudinary.com'));
       let thumbSrc = '';
-      const vidLooksLikeMp4 = (s) => s && (s.includes('.mp4') || s.includes('.webm') || s.includes('.mov') || s.includes('play_') || s.includes('cloudinary.com/video') || s.includes('b-cdn.net'));
-      const isReelBlob = vidSrc && (
-        vidSrc.startsWith('blob:') ||
-        vidSrc.startsWith('data:video') ||
-        vidSrc.includes('b-cdn.net') ||
-        vidSrc.includes('cloudinary.com/video') ||
-        vidLooksLikeMp4(vidSrc)
-      );
+      // ✅ Canvas capture ONLY for local blob videos — Cloudinary/Bunny CDN videos
+      // CORS-block canvas (tainted canvas error), so use server-generated thumbnail instead
+      const isReelBlob = vidSrc && (vidSrc.startsWith('blob:') || vidSrc.startsWith('data:video'));
       if (isB64) {
         thumbSrc = p.src;
       } else if (!srcIsVideo && p.src && p.src.match(/\.(jpg|jpeg|png|webp)(\?.*)?$/i)) {
         thumbSrc = p.src; // already a real image thumbnail
       } else if (isReelBlob) {
-        thumbSrc = ''; // canvas se capture hoga
+        thumbSrc = ''; // canvas se capture hoga (local blob — same-origin, CORS-safe)
       } else {
+        // ✅ Cloudinary/Bunny CDN video — server-side thumbnail generate karo
         thumbSrc = getCloudinaryThumb(p.vid || (srcIsVideo ? p.src : ''), 400, 711);
       }
       const reelThumbId = `rthumb${p.id}`;
       media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">
-        <img class="reel-thumb" id="${reelThumbId}" src="${thumbSrc}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:${thumbSrc?'block':'none'}" onerror="this.style.display='none'">
+        <img class="reel-thumb" id="${reelThumbId}" src="${thumbSrc}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:${thumbSrc?'block':'none'}" onerror="this.style.display='none';_retryThumbLoad(this)">
         <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="${isReelBlob?'metadata':'none'}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0" ${isReelBlob?`onloadeddata="captureBlobThumb(this,document.getElementById('${reelThumbId}'),${p.id})"`:''}></video>
         <div class="reel-badge">🎬 Reel</div>
-        <div class="reel-dur">▶ 0:${String(15+p.id%45).padStart(2,'0')}</div>
+        <div class="reel-dur">▶ ${_pinDurLabel(p)}</div>
         <div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div>
       </div>`;
     } else if(p.type==='video'){
@@ -2395,14 +2519,10 @@ function _realBuildGrid(list){
       const vidSrc = p.vid || p.src;
       // ✅ vThumb declared FIRST — was used before declaration (ReferenceError) earlier
       let vThumb = '';
-      // ✅ Canvas capture for: blob, Bunny CDN, mp4 URLs (no image thumbnail)
-      const vidLooks = (s) => s && (s.includes('.mp4') || s.includes('.webm') || s.includes('.mov') || s.includes('play_'));
-      const isVidBlob = !vThumb && vidSrc && (
-        vidSrc.startsWith('blob:') ||
-        vidSrc.startsWith('data:video') ||
-        vidSrc.includes('b-cdn.net') ||
-        vidLooks(vidSrc)
-      );
+      // ✅ Canvas capture ONLY for local blob videos (same-origin, CORS-safe).
+      // Cloudinary/Bunny CDN videos are cross-origin — canvas capture throws a
+      // tainted-canvas SecurityError silently, so they MUST use server thumbnails instead.
+      const isVidBlob = !vThumb && vidSrc && (vidSrc.startsWith('blob:') || vidSrc.startsWith('data:video'));
       const vSrcIsVideo = p.src && (p.src.includes('.mp4') || p.src.includes('.webm') || p.src.includes('play_') || p.src.includes('b-cdn.net') || p.src.includes('cloudinary.com/video'));
       if (isB64) {
         vThumb = p.src;
@@ -2416,8 +2536,9 @@ function _realBuildGrid(list){
       const vidThumbId = `vthumb${p.id}`;
       media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)">
         <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="${isVidBlob?'metadata':'none'}" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0" ${isVidBlob?`onloadeddata="captureBlobThumb(this,document.getElementById('${vidThumbId}'),${p.id})"`:''}></video>
-        <img class="vid-thumb" id="${vidThumbId}" src="${vThumb}" style="height:${imgH}px;width:100%;object-fit:cover;display:${vThumb?'block':'none'}" alt="${p.title}" loading="lazy" onerror="this.style.display='none'">
+        <img class="vid-thumb" id="${vidThumbId}" src="${vThumb}" style="height:${imgH}px;width:100%;object-fit:cover;display:${vThumb?'block':'none'}" alt="${p.title}" loading="lazy" onerror="this.style.display='none';_retryThumbLoad(this)">
         <div class="video-badge">🎥 Video</div>
+        <div class="reel-dur">▶ ${_pinDurLabel(p)}</div>
         <div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div>
       </div>`;
     } else {
@@ -2448,7 +2569,7 @@ function _realBuildGrid(list){
           <button class="ov-btn del-btn" data-owner="${(p.user&&p.user.name)||''}" onclick="deletePin(event,${p.id})" title="Delete" style="background:rgba(220,38,38,.9);color:#fff;font-size:16px;display:none">🗑️</button>
         </div>
         <div class="overlay-bottom">
-          ${p.type!=='image'?`<button class="ov-btn" onclick="openReels(event,${p.id})" title="Reels mein dekho">🎬</button>`:''}
+          ${p.type!=='image'?`<button class="ov-btn" onclick="openDetail(${p.id})" title="Watch">🎬</button>`:''}
           <button class="ov-btn" onclick="openShareFor(event,${p.id})">📤</button>
           <button class="ov-btn" onclick="dlPin(event,${p.id})">⬇️</button>
           <button class="ov-btn" onclick="openReportModal(event,${p.id})" title="Report">🚩</button>
@@ -2526,10 +2647,23 @@ function hoverStop(id){
 }
 
 // ─── SAVE ───
-function tgSave(e,id){e.stopPropagation();savedSet.has(id)?savedSet.delete(id):savedSet.add(id);toast(savedSet.has(id)?'✅ Saved!':'Unsave ho gaya');applyFilters();}
+function tgSave(e,id){e.stopPropagation();if(navigator.vibrate)navigator.vibrate([20]);savedSet.has(id)?savedSet.delete(id):savedSet.add(id);toast(savedSet.has(id)?'✅ Saved!':'Removed from saved');applyFilters();if(typeof saveSavedToFirestore==='function'){try{saveSavedToFirestore();}catch(e2){}}}
 
 // ─── DETAIL ───
 function openDetail(id){
+  const p0=PIN_DATA.find(x=>x.id===id);if(!p0)return;
+  // ✅ SMART ROUTING — type + duration ke hisaab se decide karo
+  // (1) type==='reel' → hamesha scroll-feed (9:16 content)
+  // (2) type==='video' aur duration <=60s → scroll-feed (chhoti video, reel jaisi)
+  // (3) type==='video' aur duration >60s (ya duration pata nahi) → single-player
+  if (p0.type === 'reel') {
+    openReels(new Event('x'), id);
+    return;
+  }
+  if (p0.type === 'video' && typeof p0._duration === 'number' && p0._duration > 0 && p0._duration <= 60) {
+    openReels(new Event('x'), id);
+    return;
+  }
   pushHistory('detail_' + id);
   const p=PIN_DATA.find(x=>x.id===id);if(!p)return;
   openPinId=id;
@@ -2553,12 +2687,25 @@ function openDetail(id){
   }
   document.getElementById('detailMedia').innerHTML=mediaHtml;
   document.getElementById('detailTitle').textContent=p.title;
-  document.getElementById('detailDesc').textContent=p.desc;
+  const descEl = document.getElementById('detailDesc');
+  const descToggle = document.getElementById('detailDescToggle');
+  descEl.textContent = p.desc;
+  descEl.classList.add('desc-truncated');
+  descToggle.textContent = 'Read more';
+  // ✅ Thoda wait karo taaki layout settle ho jaaye, phir check karo ki text
+  // ek line mein fit ho raha hai ya nahi — agar nahi, "Read more" dikhao
+  setTimeout(() => {
+    if (descEl.scrollWidth > descEl.clientWidth) {
+      descToggle.style.display = 'block';
+    } else {
+      descToggle.style.display = 'none';
+    }
+  }, 0);
   if(document.getElementById('detailUserImg'))document.getElementById('detailUserImg').src=p.user.avatar;
   document.getElementById('detailUserName').textContent=p.user.name;
   document.getElementById('detailUserFol').textContent=(p.user.followers||'0')+' followers';
   const sb=document.getElementById('detailSaveBtn');
-  sb.textContent=savedSet.has(id)?'✔ Saved':'Save';sb.className='detail-save'+(savedSet.has(id)?' saved':'');
+  if(sb){sb.innerHTML=savedSet.has(id)?'✔ Saved':'🔖 Save';}
 
   // ✅ Follow state restore
   const followBtn = document.getElementById('followBtn');
@@ -2591,7 +2738,7 @@ function openDetail(id){
           <div style="font-weight:700;font-size:13px">${p.user.name}</div>
           <div style="font-size:11px;color:#666">${p.user.followers} followers</div>
         </div>
-        <button onclick="toast('🔗 Profile link copy ho gaya!')" style="background:#1a56db;color:#fff;border:none;padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer">🔗 Share</button>
+        <button onclick="toast('🔗 Profile link copied!')" style="background:#1a56db;color:#fff;border:none;padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer">🔗 Share</button>
       </div>
     `;
   }
@@ -2747,11 +2894,23 @@ function createClickPinId(name){
     myClickPinName = myClickPinId.replace('@','').replace(/_/g,' ');
     localStorage.setItem('cp_user_id',   myClickPinId);
     localStorage.setItem('cp_user_name', myClickPinName);
-    toast('🪪 ID "' + myClickPinId + '" save ho gaya! Ab is ID se post upload hoga ✅');
+    toast('🪪 ID "' + myClickPinId + '" saved! Posts will now upload with this ID ✅');
     updateUploadIdUI();
   } else if(chosen){
-    toast('⚠️ ID @ se shuru honi chahiye');
+    toast('⚠️ ID must start with @');
   }
+}
+
+// ✅ Naye post ke liye guaranteed-unique id — Date.now() akela use karne se
+// jaldi-jaldi (ek hi millisecond mein) do posts upload hone par same id ban
+// sakta tha, jisse unke video/audio DOM elements duplicate ho jaate the aur
+// audio/video galat card se cross ho jaata tha.
+let _lastGeneratedPostId = 0;
+function genUniquePostId(){
+  let id = Date.now();
+  if (id <= _lastGeneratedPostId) id = _lastGeneratedPostId + 1;
+  _lastGeneratedPostId = id;
+  return id;
 }
 
 function createUploadId(){
@@ -2765,7 +2924,7 @@ function createUploadId(){
   localStorage.setItem('cp_user_id',   id);
   localStorage.setItem('cp_user_name', name);
   updateUploadIdUI();
-  toast('🪪 ID "' + id + '" create ho gaya! Ab is ID se post upload hoga ✅');
+  toast('🪪 ID "' + id + '" created! Posts will now upload with this ID ✅');
 }
 
 function updateUploadIdUI(){
@@ -2794,14 +2953,14 @@ function dlFromDetail(){
   const url = (p.type==='video'||p.type==='reel') && p.vid ? p.vid : p.src;
   const filename = p.title.replace(/\s+/g,'_') + ((p.type==='video'||p.type==='reel')?'.mp4':'.jpg');
 
-  toast('⬇️ Download shuru ho rahi hai...');
+  toast('⬇️ Download starting...');
 
   if(url.startsWith('data:')) {
     // Base64 — direct download
     const a = document.createElement('a');
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    toast('✅ Download ho gaya!');
+    toast('✅ Downloaded!');
   } else if(url.includes('cloudinary.com') || url.includes('res.cloudinary')) {
     // Cloudinary URL — fl_attachment trick se download karo
     const dlUrl = url.replace('/upload/', '/upload/fl_attachment/');
@@ -2810,7 +2969,7 @@ function dlFromDetail(){
     a.download = filename;
     a.target = '_blank';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    toast('✅ Download shuru ho gayi!');
+    toast('✅ Download started!');
   } else {
     // Doosre URLs — fetch try karo, fallback new tab
     fetch(url)
@@ -2822,7 +2981,7 @@ function dlFromDetail(){
         document.body.appendChild(a); a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(burl);
-        toast('✅ Download ho gaya!');
+        toast('✅ Downloaded!');
       })
       .catch(()=>{
         const a = document.createElement('a');
@@ -2834,7 +2993,21 @@ function dlFromDetail(){
 }
 
 // closeDetail is defined in security section below
-function toggleDetailSave(){if(!openPinId)return;savedSet.has(openPinId)?savedSet.delete(openPinId):savedSet.add(openPinId);const sb=document.getElementById('detailSaveBtn');sb.textContent=savedSet.has(openPinId)?'✔ Saved':'Save';sb.className='detail-save'+(savedSet.has(openPinId)?' saved':'');toast(savedSet.has(openPinId)?'✅ Saved!':'Unsave ho gaya');applyFilters();}
+// ✅ Description "Read more" / "Show less" toggle
+function toggleDescReadMore(){
+  const descEl = document.getElementById('detailDesc');
+  const toggle = document.getElementById('detailDescToggle');
+  const isTruncated = descEl.classList.contains('desc-truncated');
+  if (isTruncated) {
+    descEl.classList.remove('desc-truncated');
+    toggle.textContent = 'Show less';
+  } else {
+    descEl.classList.add('desc-truncated');
+    toggle.textContent = 'Read more';
+  }
+}
+
+function toggleDetailSave(){if(!openPinId)return;savedSet.has(openPinId)?savedSet.delete(openPinId):savedSet.add(openPinId);const sb=document.getElementById('detailSaveBtn');if(sb){sb.innerHTML=savedSet.has(openPinId)?'✔ Saved':'🔖 Save';}toast(savedSet.has(openPinId)?'✅ Saved!':'Removed from saved');applyFilters();}
 function openShareFromDetail(){if(openPinId)openShareFor(new Event('x'),openPinId);}
 function openReelsFromDetail(){closeDetail();openReels(null,openPinId);}
 
@@ -2854,6 +3027,7 @@ function openShareFor(e,id){
     img.src=imgSrc; img.style.display='block';
   }
   document.getElementById('shareModal').classList.add('open');
+  pushHistory('share');
 }
 function closeShare(){document.getElementById('shareModal').classList.remove('open');const v=document.getElementById('sharePreviewVid');v.pause();v.src='';}
 
@@ -2888,7 +3062,7 @@ async function nativeShare(){
   if(navigator.share){
     try{
       await navigator.share({title: sharePin.title, text: sharePin.desc+'\n\n'+mediaUrl, url: mediaUrl});
-      toast('✅ Share ho gaya!');
+      toast('✅ Shared!');
     } catch(e){ if(e.name!=='AbortError') copyLink(); }
   } else copyLink();
 }
@@ -2897,11 +3071,11 @@ function copyLink(){
   const url = sharePin
     ? (((sharePin.type==='video'||sharePin.type==='reel')&&sharePin.vid&&!sharePin.vid.startsWith('data:')) ? sharePin.vid : sharePin.src.startsWith('data:') ? location.href : sharePin.src)
     : location.href;
-  if(navigator.clipboard) navigator.clipboard.writeText(url).then(()=>toast('🔗 Link copy ho gaya!'));
+  if(navigator.clipboard) navigator.clipboard.writeText(url).then(()=>toast('🔗 Link copied!'));
   else{const t=document.createElement('textarea');t.value=url;document.body.appendChild(t);t.select();document.execCommand('copy');document.body.removeChild(t);toast('🔗 Copied!');}
   closeShare();
 }
-function dlPin(e,id){e.stopPropagation();const p=PIN_DATA.find(x=>x.id===id);if(!p)return;const a=document.createElement('a');a.href=p.src;a.download=p.title.replace(/\s+/g,'_')+'.jpg';a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);toast('⬇️ Download shuru ho gaya!');}
+function dlPin(e,id){e.stopPropagation();const p=PIN_DATA.find(x=>x.id===id);if(!p)return;const a=document.createElement('a');a.href=p.src;a.download=p.title.replace(/\s+/g,'_')+'.jpg';a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);toast('⬇️ Download started!');}
 
 // ── FOLLOW + BELL ──
 function handleFollow(btn) {
@@ -2923,7 +3097,7 @@ function handleFollow(btn) {
     }
     saveFollowNotification();
   } else {
-    toast('Unfollow ho gaya');
+    toast('Unfollowed');
     const p = PIN_DATA.find(x => x.id === openPinId);
     if (p) {
       let follows = JSON.parse(localStorage.getItem('cp_follows') || '[]');
@@ -2935,7 +3109,9 @@ function handleFollow(btn) {
 function toggleBellNotif(btn) {
   const isOn = btn.textContent === '🔔';
   btn.textContent = isOn ? '🔕' : '🔔';
-  btn.style.background = isOn ? '#f0f0f0' : 'none';
+  btn.style.background = isOn ? '#f4f4f5' : '#fff';
+  btn.style.borderColor = isOn ? 'var(--border)' : '#ec4899';
+  btn.style.boxShadow = isOn ? 'none' : '0 2px 8px rgba(236,72,153,.25)';
   toast(isOn ? '🔕 Notifications off' : '🔔 Notifications on');
 }
 
@@ -2980,7 +3156,7 @@ async function deletePin(e, id) {
   const p = PIN_DATA.find(x => x.id === id);
   if (!p) return;
 
-  if (!confirm(`"${p.title}" ko delete karna chahte ho?`)) return;
+  if (!confirm(`Are you sure you want to delete "${p.title}"?`)) return;
 
   // 1. PIN_DATA se hatao
   const idx = PIN_DATA.findIndex(x => x.id === id);
@@ -3013,25 +3189,53 @@ async function deletePin(e, id) {
 function openReels(e,startId){
   if(e&&e.stopPropagation)e.stopPropagation();
   pushHistory('reels');
-  const reels=PIN_DATA.filter(p=>p.type==='reel'||p.type==='video');
-  buildReelsView(reels);
+  // ✅ Scroll-feed mein sirf: actual reels + chhoti videos (<=60s) shamil hon.
+  // Lambi videos (>60s, ya duration pata nahi) is feed mein nahi aani chahiye —
+  // unhe single-player (openDetail) mein khulna chahiye.
+  const reels=PIN_DATA.filter(p=>
+    p.type==='reel' ||
+    (p.type==='video' && typeof p._duration==='number' && p._duration>0 && p._duration<=60)
+  );
+  buildReelsView(reels, startId);
   document.getElementById('reelsView').classList.add('open');
   document.body.style.overflow='hidden';
-  if(startId){const idx=reels.findIndex(r=>r.id===startId);if(idx>0)setTimeout(()=>{document.getElementById('rsScroll').scrollTop=idx*window.innerHeight;},80);}
+  // ✅ Bottom nav hide karo taaki reel poori screen pe dikhe, YouTube Shorts jaisa
+  // (class use kar rahe hain kyunki mobile CSS mein .bottom-nav pe !important laga hai)
+  const bn = document.querySelector('.bottom-nav');
+  if (bn) bn.classList.add('force-hide');
 }
 function closeReels(){document.getElementById('reelsView').classList.remove('open');document.body.style.overflow='';// Stop all reels videos
-  document.querySelectorAll('.rs-slide video').forEach(v=>{v.pause();});}
-function buildReelsView(reels){
+  document.querySelectorAll('.rs-slide video, #reelsView video').forEach(v=>{v.pause();v.src='';v.load();});
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.playbackState = 'none';
+    try { navigator.mediaSession.metadata = null; } catch(e) {}
+  }
+  // ✅ Bottom nav wapas dikhao
+  const bn = document.querySelector('.bottom-nav');
+  if (bn) bn.classList.remove('force-hide');
+}
+// ✅ FIX: pehle sirf current video par muted/play set hota tha, lekin agar
+// scroll fast ho ya do videos ka intersection overlap ho jaaye (edge case),
+// to pichli video pause hone se pehle hi nayi wali play ho jaati thi — is se
+// dono reels ki awaaz ek saath sunayi deti thi. Ab har baar koi bhi reel video
+// play karne se pehle baaki SAARI reel videos ko forcefully pause+mute kar
+// dete hain, taaki kabhi bhi ek se zyada video ki awaaz na aaye.
+function _pauseAllOtherReelVideos(exceptVid){
+  document.querySelectorAll('#reelsView .rs-video').forEach(v=>{
+    if(v!==exceptVid && !v.paused){ v.pause(); v.muted = true; }
+  });
+}
+function buildReelsView(reels, startId){
   const sc=document.getElementById('rsScroll');
   sc.innerHTML=reels.map((p,i)=>`
     <div class="rs-slide" id="rss${p.id}">
       <div class="rs-bg" style="background-image:url('${p.src}&auto=format&w=50')"></div>
-      ${p.vid?`<video class="rs-video" id="rsv${p.id}" src="${p.vid}" poster="${p.src}&auto=format&fit=crop&w=507&h=900" muted loop playsinline preload="${i<2?'auto':'none'}" onclick="toggleReelPlay(${p.id})"></video>`
+      ${p.vid?`<video class="rs-video" id="rsv${p.id}" src="${p.vid}" poster="${p.src}&auto=format&fit=crop&w=507&h=900" loop playsinline preload="${i<2?'auto':'none'}" onclick="toggleReelPlay(${p.id})"></video>`
               :`<img class="rs-thumb" src="${p.src}&auto=format&fit=crop&w=507&h=900" loading="${i<3?'eager':'lazy'}">`}
       <div class="rs-ov"></div>
       <div class="rs-pause-ic"><span>⏸️</span></div>
       <div class="rs-top">
-        <button class="rs-back" onclick="closeReels()">✕</button>
+        <button class="rs-back" onclick="goBack()">✕</button>
         <span class="rs-head">🎬 Showfy Reels</span>
         <span style="width:40px"></span>
       </div>
@@ -3041,36 +3245,108 @@ function buildReelsView(reels){
           <div><span class="rs-uname">${p.user.name}</span><span class="rs-uhandle">@${p.user.name.toLowerCase().replace(' ','_')}</span></div>
           <button class="rs-follow" onclick="this.classList.toggle('on');toast(this.classList.contains('on')?'✅ Following!':'Unfollow ho gaya')">Follow</button>
         </div>
-        <div class="rs-caption">${p.desc}</div>
+        <div class="rs-caption">${p.title ? `<div class="rs-title" style="font-weight:700;margin-bottom:2px">${p.title}</div>` : ''}${(p.desc && p.desc !== 'New post') ? `<div class="rs-desc">${p.desc}</div>` : ''}</div>
         <div class="rs-tags"><span class="rs-tag">#${p.cat}</span><span class="rs-tag">#Showfy</span><span class="rs-tag">#India</span></div>
       </div>
       <div class="rs-actions">
-        <button class="rs-act" onclick="tgReelLike(this,${p.id})">
-          <div class="rs-act-ic" id="rlc${p.id}">❤️</div><span class="rs-act-lbl" id="rln${p.id}">${p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes}</span>
+        <button class="rs-act" data-liked="${likedSet.has(p.id)?'1':'0'}" onclick="tgReelLike(this,${p.id})">
+          <div class="rs-act-ic" id="rlc${p.id}">${likedSet.has(p.id)?'❤️':'🤍'}</div><span class="rs-act-lbl" id="rln${p.id}">${p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes}</span>
         </button>
+        <button class="rs-act" onclick="openComments(${p.id})"><div class="rs-act-ic">💬</div><span class="rs-act-lbl" id="rcn${p.id}">${(commentsDB[p.id]||[]).length}</span></button>
         <button class="rs-act" onclick="openShareFor(new Event('x'),${p.id})"><div class="rs-act-ic">📤</div><span class="rs-act-lbl">Share</span></button>
-        <button class="rs-act" onclick="tgSave(new Event('x'),${p.id})"><div class="rs-act-ic">🔖</div><span class="rs-act-lbl">Save</span></button>
-        <button class="rs-act" onclick="dlPin(new Event('x'),${p.id})"><div class="rs-act-ic">⬇️</div><span class="rs-act-lbl">Download</span></button>
-        <button class="rs-act" onclick="toast('🚩 Report ho gaya. Review karenge.')"><div class="rs-act-ic">⋯</div><span class="rs-act-lbl">More</span></button>
+        <button class="rs-act" id="muteBtn${p.id}" onclick="toggleReelMute(event,${p.id})"><div class="rs-act-ic">${window._reelsMuted?'🔇':'🔊'}</div></button>
+        <button class="rs-act" onclick="toggleReelMoreMenu(event,${p.id})"><div class="rs-act-ic">⋮</div></button>
+        <div class="rs-more-menu" id="rsMoreMenu${p.id}" style="display:none;position:absolute;right:54px;bottom:0;background:#1c1c1e;border-radius:14px;overflow:hidden;min-width:160px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:60">
+          <button onclick="tgSave(new Event('x'),${p.id});toggleReelMoreMenu(event,${p.id})" style="width:100%;text-align:left;background:none;border:none;padding:13px 16px;font-size:13px;font-weight:600;color:#fff;cursor:pointer;display:flex;align-items:center;gap:10px">🔖 Save</button>
+          <button onclick="dlPin(new Event('x'),${p.id});toggleReelMoreMenu(event,${p.id})" style="width:100%;text-align:left;background:none;border:none;padding:13px 16px;font-size:13px;font-weight:600;color:#fff;cursor:pointer;display:flex;align-items:center;gap:10px">⬇️ Download</button>
+          <button onclick="saveToBoard(${p.id});toggleReelMoreMenu(event,${p.id})" style="width:100%;text-align:left;background:none;border:none;padding:13px 16px;font-size:13px;font-weight:600;color:#fff;cursor:pointer;display:flex;align-items:center;gap:10px">📂 Collection</button>
+          <button onclick="openNoteModal(event,${p.id});toggleReelMoreMenu(event,${p.id})" style="width:100%;text-align:left;background:none;border:none;padding:13px 16px;font-size:13px;font-weight:600;color:#fff;cursor:pointer;display:flex;align-items:center;gap:10px">📝 Note</button>
+          <button onclick="openReportModal(new Event('x'),${p.id});toggleReelMoreMenu(event,${p.id})" style="width:100%;text-align:left;background:none;border:none;padding:13px 16px;font-size:13px;font-weight:600;color:#ff5c5c;cursor:pointer;display:flex;align-items:center;gap:10px">🚩 Report</button>
+        </div>
       </div>
     </div>`).join('');
-  // IntersectionObserver for autoplay
-  const obs=new IntersectionObserver(entries=>{entries.forEach(e=>{const vid=e.target.querySelector('.rs-video');if(vid){if(e.isIntersecting){vid.play().catch(()=>{});}else{vid.pause();vid.currentTime=0;}}});},{threshold:0.8});
+  // IntersectionObserver for autoplay — sound ke saath try karo (reels ka asli intent)
+  const obs=new IntersectionObserver(entries=>{entries.forEach(e=>{
+    const vid=e.target.querySelector('.rs-video');
+    if(vid){
+      if(e.isIntersecting){
+        // ✅ Pehle baaki sab video pause/mute karo, phir hi ye play karo
+        _pauseAllOtherReelVideos(vid);
+        // ✅ Pehle unmute karke play try karo — agar browser block kare (rare,
+        // kyunki user ne already reels khol ke gesture diya hai), tab muted fallback
+        vid.muted = window._reelsMuted === true; // global mute-toggle state follow karo
+        vid.play().catch(()=>{ vid.muted = true; vid.play().catch(()=>{}); });
+        // ✅ Har N reels swipe karne ke baad interstitial ad dikhao (jaise TikTok/Reels)
+        _reelSwipeCount++;
+        if (_reelSwipeCount % AD_CONFIG.interstitialEveryNReels === 0) _triggerAd('interstitial');
+      } else {
+        vid.pause();vid.currentTime=0;
+      }
+    }
+  });},{threshold:0.8});
   sc.querySelectorAll('.rs-slide').forEach(s=>obs.observe(s));
-  // Autoplay first
-  setTimeout(()=>{const fv=sc.querySelector('.rs-video');if(fv)fv.play().catch(()=>{});},400);
+
+  // ✅ FIX: Pehle target slide ka pata scrollTop ko window.innerHeight se
+  // divide karke (guess) lagaya jaata tha. Mobile browsers mein scroll ke
+  // dauraan address-bar chhupne/dikhne se window.innerHeight beech mein hi
+  // badal jaata hai — isse galat slide select ho jaati thi aur bilkul
+  // doosri (jaise "D" ki jagah "C") reel khul jaati thi. Ab hum seedha
+  // startId (jis reel pe tap kiya gaya) ko use karte hain — koi guessing
+  // nahi, hamesha sahi reel hi target hogi.
+  const targetSlideEl = startId ? document.getElementById('rss'+startId) : sc.querySelector('.rs-slide');
+  if (startId && targetSlideEl) {
+    // Instant jump — smooth scroll ki zarurat nahi, view khulte hi seedha sahi reel pe hona chahiye
+    setTimeout(()=>{ targetSlideEl.scrollIntoView({ block: 'start' }); }, 30);
+  }
+  setTimeout(()=>{
+    const fv = targetSlideEl ? targetSlideEl.querySelector('.rs-video') : null;
+    if(fv && fv.paused){_pauseAllOtherReelVideos(fv);fv.muted=window._reelsMuted===true;fv.play().catch(()=>{fv.muted=true;fv.play().catch(()=>{});});}
+  },400);
 }
 function toggleReelPlay(id){
   const vid=document.getElementById('rsv'+id),slide=document.getElementById('rss'+id);
   if(!vid)return;
-  if(vid.paused){vid.play().catch(()=>{});slide.classList.remove('paused');}
+  if(vid.paused){_pauseAllOtherReelVideos(vid);vid.play().catch(()=>{});slide.classList.remove('paused');}
   else{vid.pause();slide.classList.add('paused');}
 }
+// ✅ Mute/Unmute toggle — sab reels ke liye global state, applies to currently playing video
+window._reelsMuted = false;
+function toggleReelMute(e, id){
+  if(e&&e.stopPropagation) e.stopPropagation();
+  window._reelsMuted = !window._reelsMuted;
+  // Currently visible/playing video pe turant apply karo
+  document.querySelectorAll('.rs-video').forEach(v => { v.muted = window._reelsMuted; });
+  // Sab mute buttons ka icon update karo
+  document.querySelectorAll('[id^="muteBtn"] .rs-act-ic').forEach(ic => {
+    ic.textContent = window._reelsMuted ? '🔇' : '🔊';
+  });
+}
+// ✅ Reel feed ke ⋮ More menu (Save/Collection/Note)
+function toggleReelMoreMenu(e, id){
+  if(e&&e.stopPropagation) e.stopPropagation();
+  const menu = document.getElementById('rsMoreMenu'+id);
+  if(!menu) return;
+  // Close all other open menus first
+  document.querySelectorAll('.rs-more-menu').forEach(m=>{ if(m!==menu) m.style.display='none'; });
+  menu.style.display = (menu.style.display==='block') ? 'none' : 'block';
+}
+document.addEventListener('click', function(e){
+  if(!e.target.closest('.rs-more-menu') && !e.target.closest('[onclick*="toggleReelMoreMenu"]')){
+    document.querySelectorAll('.rs-more-menu').forEach(m=>m.style.display='none');
+  }
+});
 function tgReelLike(btn,id){
   const p=PIN_DATA.find(x=>x.id===id);if(!p)return;
   const ic=document.getElementById('rlc'+id),cnt=document.getElementById('rln'+id);
-  if(btn.dataset.liked==='1'){btn.dataset.liked='0';p.likes--;ic.style.filter='none';ic.style.transform='scale(1)';}
-  else{btn.dataset.liked='1';p.likes++;ic.style.filter='drop-shadow(0 0 8px #E60023)';ic.style.transform='scale(1.3)';setTimeout(()=>ic.style.transform='scale(1)',300);toast('❤️ Liked!');}
+  if(navigator.vibrate)navigator.vibrate([15]);
+  if(btn.dataset.liked==='1'){
+    btn.dataset.liked='0';p.likes--;likedSet.delete(id);
+    ic.textContent='🤍';ic.style.filter='none';ic.style.transform='scale(1)';
+  } else {
+    btn.dataset.liked='1';p.likes++;likedSet.add(id);
+    ic.textContent='❤️';ic.style.filter='drop-shadow(0 0 8px #E60023)';ic.style.transform='scale(1.3)';
+    setTimeout(()=>ic.style.transform='scale(1)',300);toast('❤️ Liked!');
+  }
   cnt.textContent=p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes;
 }
 
@@ -3084,6 +3360,7 @@ function openUpload(){
   }
   document.getElementById('uploadModal').classList.add('open');
   updateUploadIdUI();
+  pushHistory('upload');
 }
 
 // ✅ MINIMIZE UPLOAD — background mein chala jao
@@ -3150,6 +3427,8 @@ function closeUpload(){
   document.getElementById('fileInput').accept='image/*,video/*';
   document.getElementById('fileInput').value=''; // ✅ file input bhi clear karo
   document.getElementById('dzIcon').textContent='🖼️';document.getElementById('dzText').textContent='Click to choose a Photo or Video';
+  resetCustomThumb(); // ✅ custom thumbnail bhi reset karo
+  const tw = document.getElementById('customThumbWrap'); if (tw) tw.style.display = 'none';
 }
 function switchUploadType(tp,btn){
   document.querySelectorAll('.utype-tab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');upType=tp;
@@ -3161,11 +3440,62 @@ function switchUploadType(tp,btn){
   // ✅ Video/Reel select karne par limit warning dikhao
   const limitEl = document.getElementById('dzVideoLimit');
   if (limitEl) limitEl.style.display = isVid ? 'block' : 'none';
+  // ✅ Video/Reel ke liye custom thumbnail option dikhao
+  const thumbWrap = document.getElementById('customThumbWrap');
+  if (thumbWrap) thumbWrap.style.display = isVid ? 'block' : 'none';
+  resetCustomThumb();
   // Reset preview
   document.getElementById('dropzone').style.display='block';
   document.getElementById('uploadPreviewImg').style.display='none';
   document.getElementById('uploadVideoPreview').style.display='none';
+  const _rsBanner2 = document.getElementById('reelSuggestBanner');
+  if (_rsBanner2) _rsBanner2.style.display = 'none';
   upFile=null; upData=null;
+}
+// ✅ Reel-suggestion banner ke buttons — jab short video "Video" type mein
+// select ho, user yahan se seedha "Reel" type pe switch kar sakta hai
+// BINA file dobara select kiye (already-loaded video/preview waisa hi rehta hai).
+function _switchSuggestedToReel(){
+  upType = 'reel';
+  document.querySelectorAll('.utype-tab').forEach(b=>b.classList.remove('active'));
+  const reelTab = document.getElementById('utReel');
+  if (reelTab) reelTab.classList.add('active');
+  document.getElementById('dzIcon').textContent = '🎬';
+  document.getElementById('dzText').textContent = 'Choose a vertical Reel (9:16)';
+  const banner = document.getElementById('reelSuggestBanner');
+  if (banner) banner.style.display = 'none';
+  toast('🎬 Reel format selected!');
+}
+function _dismissReelSuggest(){
+  const banner = document.getElementById('reelSuggestBanner');
+  if (banner) banner.style.display = 'none';
+}
+// ✅ CUSTOM THUMBNAIL — video/reel ke liye optional thumbnail
+let customThumbDataUrl = null;
+function handleCustomThumbSelect(inp) {
+  const f = inp.files && inp.files[0];
+  if (!f) return;
+  if (!f.type.startsWith('image/')) { toast('⚠️ Please choose an image file for the thumbnail.'); return; }
+  if (f.size > 5 * 1024 * 1024) { toast('⚠️ Thumbnail image too large! Max 5MB.'); return; }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    customThumbDataUrl = e.target.result;
+    const prev = document.getElementById('customThumbPreview');
+    const ph = document.getElementById('customThumbPlaceholder');
+    if (prev) { prev.src = customThumbDataUrl; prev.style.display = 'block'; }
+    if (ph) ph.style.display = 'none';
+    toast('✅ Thumbnail selected!');
+  };
+  reader.readAsDataURL(f);
+}
+function resetCustomThumb() {
+  customThumbDataUrl = null;
+  const prev = document.getElementById('customThumbPreview');
+  const ph = document.getElementById('customThumbPlaceholder');
+  const inp = document.getElementById('customThumbInput');
+  if (prev) { prev.src = ''; prev.style.display = 'none'; }
+  if (ph) ph.style.display = 'block';
+  if (inp) inp.value = '';
 }
 // ── VIDEO TRIM FUNCTION ──
 // Browser mein video ko first maxSec seconds tak trim karo
@@ -3268,7 +3598,9 @@ async function trimVideoTo(file, maxSec) {
   });
 }
 
-// ── BUNNY.NET CONFIG ──
+// ── BUNNY.NET CONFIG (⚠️ ye purana/vestigial config hai, kahin use nahi hota —
+// asli config upar "BUNNY_STREAM_LIBRARY_ID / BUNNY_STREAM_API_KEY /
+// BUNNY_STREAM_CDN_HOST" mein hai jahan Showfy library ka data hai) ──
 const BUNNY_LIBRARY_ID = '682720';
 const BUNNY_API_KEY = 'fe35e2ba-aec6-4082-9e6f28e9ea68-81b6-4249';
 const BUNNY_CDN_HOST = 'vz-6f0aaff7-ec7.b-cdn.net';
@@ -3286,6 +3618,8 @@ function handleFileSelect(inp){
   try { inp.value = ''; } catch(e) {}
 
   upFile = f;
+  const _rsBanner = document.getElementById('reelSuggestBanner');
+  if (_rsBanner) _rsBanner.style.display = 'none';
 
   const ext = (f.name || '').split('.').pop().toLowerCase();
   const isVid = f.type.startsWith('video')
@@ -3341,8 +3675,38 @@ function handleFileSelect(inp){
       vEl.src = blobUrl;
       vEl.style.display = 'block';
       document.getElementById('uploadPreviewImg').style.display = 'none';
+      toast('⏳ Video loading...');
+
+      // ✅ FIX: kabhi kabhi gallery ka video (jaise phone ke naye HEVC/H.265
+      // format wali recordings) is browser mein decode/preview nahi ho paata —
+      // pehle aisi situation mein preview chup-chaap khaali/black reh jaata
+      // tha, koi error ya message nahi aata tha. Ab agar video load fail ho
+      // ya bahut zyada time le, to clear message dikhaya jaata hai.
+      let _metaLoaded = false;
+      const _loadTimeout = setTimeout(() => {
+        if (_metaLoaded) return;
+        toast('⚠️ This video can\'t be previewed in this app (the format may not be supported). Please try a different video.');
+        upFile = null; upData = null;
+        vEl.onloadedmetadata = null; vEl.onerror = null;
+        vEl.src = ''; vEl.style.display = 'none';
+        try { URL.revokeObjectURL(blobUrl); } catch(e) {}
+        document.getElementById('dropzone').style.display = 'block';
+      }, 8000);
+
+      vEl.onerror = function() {
+        if (_metaLoaded) return;
+        clearTimeout(_loadTimeout);
+        toast('⚠️ This video could not be loaded (the format or file may be corrupted). Please try a different video.');
+        upFile = null; upData = null;
+        vEl.src = ''; vEl.style.display = 'none';
+        try { URL.revokeObjectURL(blobUrl); } catch(e) {}
+        document.getElementById('dropzone').style.display = 'block';
+      };
+
       // ✅ Duration check — 5 min se zyada hai toh seedha REJECT karo (no trimming — fast & simple)
       vEl.onloadedmetadata = function() {
+        _metaLoaded = true;
+        clearTimeout(_loadTimeout);
         if (vEl.duration > 300) {
           const mins = Math.floor(vEl.duration/60);
           const secs = Math.floor(vEl.duration%60);
@@ -3353,7 +3717,18 @@ function handleFileSelect(inp){
           document.getElementById('dropzone').style.display = 'block';
           return;
         }
+        // ✅ Duration save karo — submitPin isse use karega yeh decide karne ke liye
+        // ki video single-player mein khulegi ya reel scroll-feed mein
+        window._uploadedVideoDuration = vEl.duration;
+        // ✅ Ek chhota sa seek force karo taaki pehla frame render ho jaaye
+        // (warna kaafi videos "black box" jaisi dikhti hain jab tak play na karo)
+        try { vEl.currentTime = Math.min(0.1, vEl.duration / 2); } catch(e) {}
         toast('✅ Video ready! Add a title and publish.');
+        // ✅ Agar user ne "Video" type select kiya hai lekin video 1 minute se
+        // chhoti hai, to use bata do ki "Reel" format mein ye behtar dikhegi
+        // (kyunki 60s tak ki videos waise bhi reel-feed mein hi chalti hain)
+        const banner = document.getElementById('reelSuggestBanner');
+        if (banner) banner.style.display = (upType === 'video' && vEl.duration <= 60) ? 'block' : 'none';
       };
       upData = blobUrl;
     } catch(e) {
@@ -3380,7 +3755,84 @@ function handleFileSelect(inp){
   }
 }
 
-// ── BUNNY.NET UPLOAD ──
+// ── BUNNY.NET STREAM (real video hosting) ──
+// ✅ Ye asli Bunny Stream integration hai — video yahan upload hoti hai,
+// phir processing complete hone tak poll karte hain (Option B: free tier,
+// Early-Play OFF, isliye thoda wait karna padta hai encoding ke liye).
+const BUNNY_STREAM_LIBRARY_ID = '702316';
+const BUNNY_STREAM_API_KEY = '5d229741-41b0-4672-a58d021248a2-1c5c-4f2a';
+const BUNNY_STREAM_CDN_HOST = 'vz-bdc4202c-15e.b-cdn.net';
+
+async function uploadVideoToBunnyStream(file, title, onProgress) {
+  const base = 'https://video.bunnycdn.com/library/' + BUNNY_STREAM_LIBRARY_ID + '/videos';
+
+  // Step 1: video "slot" create karo (metadata)
+  const createRes = await fetch(base, {
+    method: 'POST',
+    headers: {
+      'AccessKey': BUNNY_STREAM_API_KEY,
+      'accept': 'application/json',
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ title: title || 'Untitled' })
+  });
+  if (!createRes.ok) throw new Error('Bunny create-video failed: HTTP ' + createRes.status);
+  const createData = await createRes.json();
+  const guid = createData.guid;
+  if (!guid) throw new Error('Bunny did not return a video ID');
+
+  if (onProgress) onProgress(5);
+
+  // Step 2: actual video file (raw binary) upload karo
+  const uploadRes = await fetch(base + '/' + guid, {
+    method: 'PUT',
+    headers: {
+      'AccessKey': BUNNY_STREAM_API_KEY,
+      'Content-Type': 'application/octet-stream'
+    },
+    body: file
+  });
+  if (!uploadRes.ok) throw new Error('Bunny video upload failed: HTTP ' + uploadRes.status);
+
+  if (onProgress) onProgress(20);
+
+  // Step 3: poll karo jab tak encoding complete na ho jaaye (Free tier — wait zaroori hai)
+  const maxWaitMs = 120000; // 2 minute max wait, warna timeout
+  const pollIntervalMs = 2500;
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < maxWaitMs) {
+    await new Promise(r => setTimeout(r, pollIntervalMs));
+    const statusRes = await fetch(base + '/' + guid, {
+      method: 'GET',
+      headers: { 'AccessKey': BUNNY_STREAM_API_KEY, 'accept': 'application/json' }
+    });
+    if (!statusRes.ok) continue; // ek-do baar fail ho to bhi retry karte raho
+    const statusData = await statusRes.json();
+    const encodeProgress = statusData.encodeProgress || 0;
+    if (onProgress) onProgress(20 + Math.round(encodeProgress * 0.7));
+
+    // Bunny status codes: 4 = Finished
+    if (statusData.status === 4 || encodeProgress >= 100) {
+      // ✅ Available resolutions mein se sabse achhi (max 720p) chuno
+      const avail = (statusData.availableResolutions || '').split(',').map(s=>s.trim()).filter(Boolean);
+      const preferred = ['720p','480p','360p','240p','1080p'];
+      const chosenRes = preferred.find(r => avail.includes(r)) || avail[0] || '720p';
+      return {
+        guid,
+        playUrl: 'https://' + BUNNY_STREAM_CDN_HOST + '/' + guid + '/play_' + chosenRes + '.mp4',
+        thumbUrl: 'https://' + BUNNY_STREAM_CDN_HOST + '/' + guid + '/thumbnail.jpg'
+      };
+    }
+    // status 5/6 jaisa kuch encoding error ho to turant fail karo, aage wait mat karo
+    if (statusData.status === 5 || statusData.status === 6) {
+      throw new Error('Bunny encoding failed (status ' + statusData.status + ')');
+    }
+  }
+  throw new Error('Bunny processing did not finish within 2 minutes (timeout)');
+}
+
+// ── CLOUDINARY UPLOAD (fallback / images) ──
 async function uploadToBunny(file) {
   const ext = (file.name || '').split('.').pop().toLowerCase();
   const isVideo = file.type.startsWith('video') ||
@@ -3523,9 +3975,38 @@ dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('dragover
 dz.addEventListener('dragleave',()=>dz.classList.remove('dragover'));
 dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('dragover');const f=e.dataTransfer.files[0];if(f){const dt=new DataTransfer();dt.items.add(f);document.getElementById('fileInput').files=dt.files;handleFileSelect(document.getElementById('fileInput'));}});
 
+// ✅ AD-READY BRIDGE — Jab ye app Capacitor + @capacitor-community/admob plugin
+// ke saath native APK mein wrap ho jaayegi, tab `window.Capacitor.Plugins.AdMob`
+// automatically available ho jaayega, aur ye function real ads dikhana shuru
+// kar dega. Abhi browser mein test karte waqt ye chup-chaap kuch nahi karta
+// (koi error nahi aayega) — is se app crash nahi hoti jab ad-plugin missing ho.
+let _reelSwipeCount = 0;
+const AD_CONFIG = {
+  interstitialEveryNReels: 5,   // har 5 reels swipe karne ke baad ek interstitial
+  showInterstitialAfterPublish: true
+};
+async function _triggerAd(type){
+  try {
+    const AdMob = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.AdMob;
+    if (!AdMob) return; // native ad bridge abhi available nahi (browser testing)
+    if (type === 'interstitial') {
+      await AdMob.prepareInterstitial({ adId: 'ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY' });
+      await AdMob.showInterstitial();
+    } else if (type === 'banner') {
+      await AdMob.showBanner({
+        adId: 'ca-app-pub-XXXXXXXXXXXXXXXX/ZZZZZZZZZZ',
+        adSize: 'ADAPTIVE_BANNER',
+        position: 'BOTTOM_CENTER'
+      });
+    }
+  } catch(e) {
+    console.log('Ad bridge error (safe to ignore in browser):', e.message);
+  }
+}
+
 async function submitPin(){
   const title = document.getElementById('pinTitle').value.trim();
-  if (!title) { toast('⚠️ Title zaruri hai!'); return; }
+  if (!title) { toast('⚠️ Title is required!'); return; }
 
   // ✅ Adult content check
   if (typeof checkAdultContent === 'function') {
@@ -3581,29 +4062,46 @@ async function submitPin(){
     updateUploadPill(isVidFile ? '📤 Uploading video...' : '📤 Uploading image...', 10);
 
     try {
-      const bunnyResult = await uploadToBunny(fileToUpload);
-      updateUploadPill('⚙️ Saving...', 80);
-
       if (isVidFile) {
-        finalVid = bunnyResult.url;
-        // ✅ Cloudinary video — generate thumbnail from URL
-        if (bunnyResult.url && bunnyResult.url.includes('res.cloudinary.com')) {
-          const parts = bunnyResult.url.split('/upload/');
-          if (parts.length === 2) {
-            // ✅ so_0 = first frame, instant thumbnail
-            finalSrc = parts[0] + '/upload/so_0,w_400,h_711,c_fill,q_auto,f_jpg/' + parts[1].replace(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)(\?.*)?$/i, '.jpg');
+        // ✅ Videos/Reels ke liye pehle Bunny Stream try karo (asli video hosting,
+        // bahut sasta). Agar kisi wajah se fail ho (CORS, network, timeout),
+        // to bina user ko pareshan kiye Cloudinary pe fallback ho jaayega.
+        try {
+          const bunnyStream = await uploadVideoToBunnyStream(fileToUpload, title, (pct) => {
+            updateUploadPill(pct < 20 ? '📤 Uploading video...' : '⚙️ Processing video... ' + Math.min(pct,90) + '%', Math.min(10 + pct*0.7, 85));
+          });
+          finalVid = bunnyStream.playUrl;
+          finalSrc = customThumbDataUrl || bunnyStream.thumbUrl;
+          updateUploadPill('⚙️ Saving...', 90);
+          toast('✅ Uploaded successfully!');
+        } catch (bunnyErr) {
+          console.log('Bunny Stream failed, falling back to Cloudinary:', bunnyErr.message);
+          updateUploadPill('📤 Uploading video (fallback)...', 10);
+          const bunnyResult = await uploadToBunny(fileToUpload);
+          updateUploadPill('⚙️ Saving...', 80);
+          finalVid = bunnyResult.url;
+          if (customThumbDataUrl) {
+            finalSrc = customThumbDataUrl;
+          } else if (bunnyResult.url && bunnyResult.url.includes('res.cloudinary.com')) {
+            const parts = bunnyResult.url.split('/upload/');
+            if (parts.length === 2) {
+              finalSrc = parts[0] + '/upload/so_0,w_400,h_711,c_fill,q_auto,f_jpg/' + parts[1].replace(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)(\?.*)?$/i, '.jpg');
+            } else {
+              finalSrc = '';
+            }
           } else {
             finalSrc = '';
           }
-        } else {
-          finalSrc = '';
+          toast('✅ Uploaded successfully!');
         }
       } else {
+        const bunnyResult = await uploadToBunny(fileToUpload);
+        updateUploadPill('⚙️ Saving...', 80);
         // Image: data URL (instant, no network delay)
         finalSrc = bunnyResult.url;
         finalVid = null;
+        toast('✅ Uploaded successfully!');
       }
-      toast('✅ Uploaded successfully!');
     } catch(err) {
       if (pubBtn) { pubBtn.disabled = false; pubBtn.textContent = '🚀 Publish'; }
       document.getElementById('uploadModal').classList.add('open');
@@ -3615,7 +4113,14 @@ async function submitPin(){
     toast('📌 Local mode — saving directly...');
   }
 
-  const postId = Date.now();
+  // ✅ FIX: Do posts jaldi-jaldi (ek hi millisecond mein) upload karne par
+  // Date.now() se bana hua id DUPLICATE ban jaata tha — dono posts ka id same
+  // ho jaata, isliye unke video/audio elements ka DOM id (rv123, rw123) bhi
+  // duplicate ho jaata tha. Isse browser confuse ho jaata ki kaunsa video
+  // kis card ka hai — A play karo to B ki awaaz aati, aur ulta bhi hota.
+  // Ab har naye post ko GUARANTEED UNIQUE id milta hai, chahe ek hi
+  // millisecond mein kitni bhi baar upload ho.
+  const postId = genUniquePostId();
   const np = {
     id    : postId,
     type  : upType,
@@ -3628,19 +4133,22 @@ async function submitPin(){
     user  : currentUser,
     _isNew: true,
     _uploadTime: Date.now(),
-    _postTime: Date.now() // ✅ normalized timestamp for display (ms epoch)
+    _postTime: Date.now(), // ✅ normalized timestamp for display (ms epoch)
+    _duration: window._uploadedVideoDuration || null // ✅ video duration in seconds (decides player vs reel-feed)
   };
+  window._uploadedVideoDuration = null; // reset for next upload
 
   // ✅ PEHLE POST DIKHAO — user ko wait mat karao
   PIN_DATA.unshift(np);
   upFile = null;
   upData = null;
   closeUpload();
-  updateUploadPill('✅ ' + np.title + ' — Upload ho gayi!', 100);
+  updateUploadPill('✅ ' + np.title + ' — Uploaded!', 100);
   setTimeout(() => hidePill(), 4000);
   applyFilters();
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (pubBtn) { pubBtn.disabled = false; pubBtn.textContent = '🚀 Publish'; }
+  if (AD_CONFIG.showInterstitialAfterPublish) _triggerAd('interstitial');
   toast('🎉 Post publish ho gayi! ✅');
 
   // ✅ FIRESTORE SAVE — background mein karo (non-blocking)
@@ -3719,13 +4227,13 @@ function openFeedback(){fbType=null;fbStars=0;document.querySelectorAll('.fb-typ
 function closeFeedback(){document.getElementById('fbModal').classList.remove('open');}
 function selType(el,tp){document.querySelectorAll('.fb-type-btn').forEach(t=>t.classList.remove('sel'));el.classList.add('sel');fbType=tp;}
 function setStar(n){fbStars=n;document.querySelectorAll('.star-btn').forEach((s,i)=>s.classList.toggle('lit',i<n));}
-function submitFeedback(){if(!fbStars){toast('⚠️ Rating dena zaruri hai!');return;}if(!document.getElementById('fbText').value.trim()){toast('⚠️ Kuch likho!');return;}FDB.unshift({id:Date.now(),type:fbType||'general',stars:fbStars,name:document.getElementById('fbName').value||'Anonymous',text:document.getElementById('fbText').value.trim(),date:new Date().toISOString().split('T')[0]});document.getElementById('fbForm').style.display='none';document.getElementById('fbDone').style.display='block';if(document.getElementById('cnt-fb'))updateAdminCounts();}
+function submitFeedback(){if(!fbStars){toast('⚠️ Please give a rating!');return;}if(!document.getElementById('fbText').value.trim()){toast('⚠️ Please write something!');return;}FDB.unshift({id:Date.now(),type:fbType||'general',stars:fbStars,name:document.getElementById('fbName').value||'Anonymous',text:document.getElementById('fbText').value.trim(),date:new Date().toISOString().split('T')[0]});document.getElementById('fbForm').style.display='none';document.getElementById('fbDone').style.display='block';if(document.getElementById('cnt-fb'))updateAdminCounts();}
 
 // ─── PAGES ───
 function openPage(id){['pgAbout','pgPrivacy','pgTerms','pgContact'].forEach(x=>{const el=document.getElementById(x);if(el)el.classList.remove('open');});const el=document.getElementById(id);if(el)el.classList.add('open');}
 function closePage(id){document.getElementById(id).classList.remove('open');}
 function closeAllPages(){['pgAbout','pgPrivacy','pgTerms','pgContact'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('open');});}
-function submitContact(){const n=document.getElementById('cName').value.trim(),e=document.getElementById('cEmail').value.trim(),m=document.getElementById('cMsg').value.trim();if(!n||!e||!m){toast('⚠️ All fields are required');return;}toast('📨 Message send ho gaya!');document.getElementById('cName').value='';document.getElementById('cEmail').value='';document.getElementById('cMsg').value='';}
+function submitContact(){const n=document.getElementById('cName').value.trim(),e=document.getElementById('cEmail').value.trim(),m=document.getElementById('cMsg').value.trim();if(!n||!e||!m){toast('⚠️ All fields are required');return;}toast('📨 Message sent!');document.getElementById('cName').value='';document.getElementById('cEmail').value='';document.getElementById('cMsg').value='';}
 
 // ─── TOAST ───
 function toast(msg){const t=document.getElementById('mainToast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2800);}
@@ -3770,11 +4278,11 @@ function initDashboard(){
 function renderUsers(){const q=(document.getElementById('uq').value||'').toLowerCase(),fs=document.getElementById('ust').value,fr=document.getElementById('url').value;let list=UDB.filter(u=>(!q||u.name.toLowerCase().includes(q)||u.email.toLowerCase().includes(q))&&(!fs||u.status===fs)&&(!fr||u.role===fr));document.getElementById('usr-stats').innerHTML=[{l:'Total',v:UDB.length,c:'#3b82f6',bg:'rgba(59,130,246,.1)',ic:'👥'},{l:'Active',v:UDB.filter(u=>u.status==='active').length,c:'#22c55e',bg:'rgba(34,197,94,.1)',ic:'✅'},{l:'Creators',v:UDB.filter(u=>u.role==='creator').length,c:'#a855f7',bg:'rgba(168,85,247,.1)',ic:'✦'},{l:'Banned',v:UDB.filter(u=>u.status==='banned').length,c:'#E60023',bg:'rgba(230,0,35,.1)',ic:'🚫'}].map(s=>`<div class="stat-card" style="--sc-color:${s.c}"><div class="sc-ic" style="background:${s.bg}">${s.ic}</div><div class="sc-lbl">${s.l}</div><div class="sc-val">${s.v}</div></div>`).join('');const pages=Math.ceil(list.length/PER);if(uPg>pages)uPg=1;document.getElementById('usr-tb').innerHTML=list.slice((uPg-1)*PER,uPg*PER).map(u=>`<tr><td><div class="ucell"><img src="${u.avatar}" alt=""><div><div class="ucell-name">${u.name}</div><div class="ucell-email">${u.email}</div></div></div></td><td>${sbdg(u.role)}</td><td style="color:#f0f0f5">${u.pins}</td><td style="color:#8888aa;font-size:12px">${fD(u.joined)}</td><td>${sbdg(u.status)}</td><td><button class="row-act ok" onclick="tgBan(${u.id})">${u.status==='banned'?'Unban':'Ban'}</button><button class="row-act" onclick="delUser(${u.id})">🗑</button></td></tr>`).join('')||`<tr><td colspan="6" style="text-align:center;color:#8888aa;padding:20px">No users found</td></tr>`;let pg='';for(let i=1;i<=pages;i++)pg+=`<button class="pg-btn${i===uPg?' active':''}" onclick="uPg=${i};renderUsers()">${i}</button>`;document.getElementById('usr-pg').innerHTML=pg;updateAdminCounts();}
 function tgBan(id){const u=UDB.find(x=>x.id===id);u.status=u.status==='banned'?'active':'banned';renderUsers();aToast(u.status==='banned'?`🚫 ${u.name} banned`:`✅ ${u.name} unbanned`,'success');}
 function delUser(id){if(!confirm('Delete?'))return;UDB=UDB.filter(u=>u.id!==id);renderUsers();aToast('🗑 Deleted','success');}
-function addUser(){const n=document.getElementById('nu-name').value.trim(),e=document.getElementById('nu-email').value.trim();if(!n||!e){aToast('Name aur email zaruri','error');return;}UDB.unshift({id:Date.now(),name:n,email:e,avatar:`https://i.pravatar.cc/60?img=${Math.floor(Math.random()*30)+1}`,role:document.getElementById('nu-role').value,status:'active',joined:new Date().toISOString().split('T')[0],pins:0});document.getElementById('addUserModal').classList.remove('open');document.getElementById('nu-name').value='';document.getElementById('nu-email').value='';renderUsers();aToast('✅ User added!','success');}
+function addUser(){const n=document.getElementById('nu-name').value.trim(),e=document.getElementById('nu-email').value.trim();if(!n||!e){aToast('Name and email are required','error');return;}UDB.unshift({id:Date.now(),name:n,email:e,avatar:`https://i.pravatar.cc/60?img=${Math.floor(Math.random()*30)+1}`,role:document.getElementById('nu-role').value,status:'active',joined:new Date().toISOString().split('T')[0],pins:0});document.getElementById('addUserModal').classList.remove('open');document.getElementById('nu-name').value='';document.getElementById('nu-email').value='';renderUsers();aToast('✅ User added!','success');}
 function renderPins(){const q=(document.getElementById('pq').value||'').toLowerCase(),fc=document.getElementById('pcat').value,fs=document.getElementById('pst').value;let list=PINDB.filter(p=>(!q||p.title.toLowerCase().includes(q))&&(!fc||p.cat===fc)&&(!fs||p.status===fs));document.getElementById('pin-stats').innerHTML=[{l:'Total',v:PINDB.length,c:'#E60023',bg:'rgba(230,0,35,.1)',ic:'📌'},{l:'Active',v:PINDB.filter(p=>p.status==='active').length,c:'#22c55e',bg:'rgba(34,197,94,.1)',ic:'✅'},{l:'Reels',v:PINDB.filter(p=>p.type==='reel').length,c:'#a855f7',bg:'rgba(168,85,247,.1)',ic:'🎬'},{l:'Reported',v:PINDB.filter(p=>p.reported).length,c:'#f59e0b',bg:'rgba(245,158,11,.1)',ic:'🚩'}].map(s=>`<div class="stat-card" style="--sc-color:${s.c}"><div class="sc-ic" style="background:${s.bg}">${s.ic}</div><div class="sc-lbl">${s.l}</div><div class="sc-val">${s.v}</div></div>`).join('');const pages=Math.ceil(list.length/PER);if(pPg>pages)pPg=1;document.getElementById('pin-tb').innerHTML=list.slice((pPg-1)*PER,pPg*PER).map(p=>`<tr><td><div style="display:flex;gap:9px;align-items:center"><img src="${p.img}&auto=format" class="pthumb"><div><div style="font-size:12px;font-weight:600;color:#f0f0f5">${p.title}</div>${p.reported?'<span style="font-size:10px;color:#ff4d6d">🚩 Reported</span>':''}</div></div></td><td>${sbdg(p.type)}</td><td style="color:#8888aa">${p.user}</td><td style="color:#f0f0f5;font-weight:600">${fN(p.saves)}</td><td>${sbdg(p.status)}</td><td><button class="row-act ok" onclick="PINDB.find(x=>x.id===${p.id}).status='active';PINDB.find(x=>x.id===${p.id}).reported=false;renderPins();aToast('✅ Approved','success')">✅</button><button class="row-act" onclick="var pp=PINDB.find(x=>x.id===${p.id});pp.status=pp.status==='active'?'removed':'active';renderPins();aToast('Done','info')">${p.status==='active'?'Hide':'Show'}</button><button class="row-act" onclick="if(confirm('Delete?')){PINDB=PINDB.filter(x=>x.id!==${p.id});renderPins();aToast('🗑 Deleted','success')}">🗑</button></td></tr>`).join('')||`<tr><td colspan="6" style="text-align:center;color:#8888aa;padding:20px">No pins found</td></tr>`;let pg='';for(let i=1;i<=pages;i++)pg+=`<button class="pg-btn${i===pPg?' active':''}" onclick="pPg=${i};renderPins()">${i}</button>`;document.getElementById('pin-pg').innerHTML=pg;}
-function renderReelsAdmin(){const r=PIN_DATA.filter(p=>p.type==='reel');document.getElementById('rl-stats').innerHTML=[{l:'Total Reels',v:r.length,c:'#a855f7',bg:'rgba(168,85,247,.1)',ic:'🎬'},{l:'Total Views',v:'167k',c:'#3b82f6',bg:'rgba(59,130,246,.1)',ic:'👁'},{l:'Total Likes',v:'6.8k',c:'#E60023',bg:'rgba(230,0,35,.1)',ic:'❤️'},{l:'Avg Duration',v:'0:32',c:'#f59e0b',bg:'rgba(245,158,11,.1)',ic:'⏱'}].map(s=>`<div class="stat-card" style="--sc-color:${s.c}"><div class="sc-ic" style="background:${s.bg}">${s.ic}</div><div class="sc-lbl">${s.l}</div><div class="sc-val">${s.v}</div></div>`).join('');document.getElementById('rl-tb').innerHTML=r.map(x=>`<tr><td><div style="display:flex;gap:9px;align-items:center"><img src="${x.src}&auto=format" class="pthumb" style="aspect-ratio:9/16;width:24px;height:43px"><strong style="font-size:12px;color:#f0f0f5">${x.title}</strong></div></td><td style="color:#8888aa">${x.user.name}</td><td style="color:#f0f0f5">${fN(Math.floor(x.likes*40))}</td><td style="color:#f0f0f5">${fN(x.likes)}</td><td><span class="badge b-green">Active</span></td><td><button class="row-act ok" onclick="aToast('⭐ Featured!','success')">⭐ Feature</button><button class="row-act" onclick="aToast('🗑 Removed','success')">🗑</button></td></tr>`).join('')||`<tr><td colspan="6" style="text-align:center;color:#8888aa;padding:20px">Koi reel nahi</td></tr>`;}
+function renderReelsAdmin(){const r=PIN_DATA.filter(p=>p.type==='reel');document.getElementById('rl-stats').innerHTML=[{l:'Total Reels',v:r.length,c:'#a855f7',bg:'rgba(168,85,247,.1)',ic:'🎬'},{l:'Total Views',v:'167k',c:'#3b82f6',bg:'rgba(59,130,246,.1)',ic:'👁'},{l:'Total Likes',v:'6.8k',c:'#E60023',bg:'rgba(230,0,35,.1)',ic:'❤️'},{l:'Avg Duration',v:'0:32',c:'#f59e0b',bg:'rgba(245,158,11,.1)',ic:'⏱'}].map(s=>`<div class="stat-card" style="--sc-color:${s.c}"><div class="sc-ic" style="background:${s.bg}">${s.ic}</div><div class="sc-lbl">${s.l}</div><div class="sc-val">${s.v}</div></div>`).join('');document.getElementById('rl-tb').innerHTML=r.map(x=>`<tr><td><div style="display:flex;gap:9px;align-items:center"><img src="${x.src}&auto=format" class="pthumb" style="aspect-ratio:9/16;width:24px;height:43px"><strong style="font-size:12px;color:#f0f0f5">${x.title}</strong></div></td><td style="color:#8888aa">${x.user.name}</td><td style="color:#f0f0f5">${fN(Math.floor(x.likes*40))}</td><td style="color:#f0f0f5">${fN(x.likes)}</td><td><span class="badge b-green">Active</span></td><td><button class="row-act ok" onclick="aToast('⭐ Featured!','success')">⭐ Feature</button><button class="row-act" onclick="aToast('🗑 Removed','success')">🗑</button></td></tr>`).join('')||`<tr><td colspan="6" style="text-align:center;color:#8888aa;padding:20px">No reels found</td></tr>`;}
 function renderFeedbackAdmin(){const ft=document.getElementById('fbt').value,fs=parseInt(document.getElementById('fbs').value)||0;let list=FDB.filter(f=>(!ft||f.type===ft)&&(!fs||f.stars===fs));document.getElementById('fb-stats').innerHTML=[{l:'Total',v:FDB.length,c:'#3b82f6',bg:'rgba(59,130,246,.1)',ic:'💬'},{l:'5 Star',v:FDB.filter(f=>f.stars===5).length,c:'#f59e0b',bg:'rgba(245,158,11,.1)',ic:'⭐'},{l:'Avg Rating',v:(FDB.reduce((a,f)=>a+f.stars,0)/Math.max(FDB.length,1)).toFixed(1),c:'#22c55e',bg:'rgba(34,197,94,.1)',ic:'📊'},{l:'This Week',v:FDB.filter(f=>new Date(f.date)>new Date(Date.now()-7*24*60*60*1000)).length,c:'#a855f7',bg:'rgba(168,85,247,.1)',ic:'🆕'}].map(s=>`<div class="stat-card" style="--sc-color:${s.c}"><div class="sc-ic" style="background:${s.bg}">${s.ic}</div><div class="sc-lbl">${s.l}</div><div class="sc-val">${s.v}</div></div>`).join('');document.getElementById('fb-list').innerHTML=list.map(f=>`<div class="fb-card"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:7px"><div>${sbdg(f.type)}</div><div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:#8888aa">${fD(f.date)}</span><button class="row-act" onclick="FDB=FDB.filter(x=>x.id!==${f.id});renderFeedbackAdmin();aToast('Deleted','success')">🗑</button></div></div><div class="fb-stars">${'⭐'.repeat(f.stars)}${'☆'.repeat(5-f.stars)}</div><div class="fb-text">${f.text}</div><div class="fb-meta">— ${f.name}</div></div>`).join('')||`<div style="text-align:center;color:#8888aa;padding:30px">No feedback yet</div>`;}
-function renderContacts(){const q=(document.getElementById('cq').value||'').toLowerCase(),fs=document.getElementById('cst').value;let list=CDB.filter(c=>(!q||c.name.toLowerCase().includes(q)||c.subject.toLowerCase().includes(q))&&(!fs||c.status===fs)).sort((a,b)=>new Date(b.date)-new Date(a.date));document.getElementById('con-stats').innerHTML=[{l:'Open',v:CDB.filter(c=>c.status==='open').length,c:'#E60023',bg:'rgba(230,0,35,.1)',ic:'🔴'},{l:'Replied',v:CDB.filter(c=>c.status==='replied').length,c:'#3b82f6',bg:'rgba(59,130,246,.1)',ic:'💬'},{l:'Resolved',v:CDB.filter(c=>c.status==='resolved').length,c:'#22c55e',bg:'rgba(34,197,94,.1)',ic:'✅'},{l:'Total',v:CDB.length,c:'#f59e0b',bg:'rgba(245,158,11,.1)',ic:'📬'}].map(s=>`<div class="stat-card" style="--sc-color:${s.c}"><div class="sc-ic" style="background:${s.bg}">${s.ic}</div><div class="sc-lbl">${s.l}</div><div class="sc-val">${s.v}</div></div>`).join('');document.getElementById('con-tb').innerHTML=list.map(c=>`<tr><td><div style="font-weight:600;font-size:12px;color:#f0f0f5">${c.name}</div><div style="font-size:11px;color:#8888aa">${c.email}</div></td><td style="font-weight:600;font-size:12px;color:#f0f0f5">${c.subject}</td><td style="max-width:140px;font-size:12px;color:#8888aa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.msg}</td><td>${sbdg(c.priority)}</td><td style="font-size:11px;color:#8888aa">${fD(c.date)}</td><td>${sbdg(c.status)}</td><td><button class="row-act ok" onclick="replyContact(${c.id})">↩</button><button class="row-act" onclick="CDB.find(x=>x.id===${c.id}).status='resolved';renderContacts();aToast('✅ Resolved','success')">✅</button><button class="row-act" onclick="CDB=CDB.filter(x=>x.id!==${c.id});renderContacts();aToast('🗑 Deleted','success')">🗑</button></td></tr>`).join('')||`<tr><td colspan="7" style="text-align:center;color:#8888aa;padding:20px">Koi message nahi</td></tr>`;updateAdminCounts();}
+function renderContacts(){const q=(document.getElementById('cq').value||'').toLowerCase(),fs=document.getElementById('cst').value;let list=CDB.filter(c=>(!q||c.name.toLowerCase().includes(q)||c.subject.toLowerCase().includes(q))&&(!fs||c.status===fs)).sort((a,b)=>new Date(b.date)-new Date(a.date));document.getElementById('con-stats').innerHTML=[{l:'Open',v:CDB.filter(c=>c.status==='open').length,c:'#E60023',bg:'rgba(230,0,35,.1)',ic:'🔴'},{l:'Replied',v:CDB.filter(c=>c.status==='replied').length,c:'#3b82f6',bg:'rgba(59,130,246,.1)',ic:'💬'},{l:'Resolved',v:CDB.filter(c=>c.status==='resolved').length,c:'#22c55e',bg:'rgba(34,197,94,.1)',ic:'✅'},{l:'Total',v:CDB.length,c:'#f59e0b',bg:'rgba(245,158,11,.1)',ic:'📬'}].map(s=>`<div class="stat-card" style="--sc-color:${s.c}"><div class="sc-ic" style="background:${s.bg}">${s.ic}</div><div class="sc-lbl">${s.l}</div><div class="sc-val">${s.v}</div></div>`).join('');document.getElementById('con-tb').innerHTML=list.map(c=>`<tr><td><div style="font-weight:600;font-size:12px;color:#f0f0f5">${c.name}</div><div style="font-size:11px;color:#8888aa">${c.email}</div></td><td style="font-weight:600;font-size:12px;color:#f0f0f5">${c.subject}</td><td style="max-width:140px;font-size:12px;color:#8888aa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.msg}</td><td>${sbdg(c.priority)}</td><td style="font-size:11px;color:#8888aa">${fD(c.date)}</td><td>${sbdg(c.status)}</td><td><button class="row-act ok" onclick="replyContact(${c.id})">↩</button><button class="row-act" onclick="CDB.find(x=>x.id===${c.id}).status='resolved';renderContacts();aToast('✅ Resolved','success')">✅</button><button class="row-act" onclick="CDB=CDB.filter(x=>x.id!==${c.id});renderContacts();aToast('🗑 Deleted','success')">🗑</button></td></tr>`).join('')||`<tr><td colspan="7" style="text-align:center;color:#8888aa;padding:20px">No messages found</td></tr>`;updateAdminCounts();}
 function replyContact(id){const c=CDB.find(x=>x.id===id);const r=prompt(`Reply to ${c.name}:\nRe: ${c.subject}`);if(r){c.status='replied';renderContacts();aToast(`📨 Reply sent!`,'success');}}
 // ✅ Real user-submitted reports ko admin RDB mein sync karo
 function syncRealReportsIntoRDB() {
@@ -3822,7 +4330,7 @@ function adminRestorePin(pinId) {
 
 function renderReports(){syncRealReportsIntoRDB();document.getElementById('rep-stats').innerHTML=[{l:'Pending',v:RDB.filter(r=>r.status==='pending').length,c:'#E60023',bg:'rgba(230,0,35,.1)',ic:'🔴'},{l:'Actioned',v:RDB.filter(r=>r.status==='actioned').length,c:'#a855f7',bg:'rgba(168,85,247,.1)',ic:'⚡'},{l:'Dismissed',v:RDB.filter(r=>r.status==='dismissed').length,c:'#8888aa',bg:'rgba(136,136,170,.1)',ic:'🔕'},{l:'Total',v:RDB.length,c:'#3b82f6',bg:'rgba(59,130,246,.1)',ic:'📊'}].map(s=>`<div class="stat-card" style="--sc-color:${s.c}"><div class="sc-ic" style="background:${s.bg}">${s.ic}</div><div class="sc-lbl">${s.l}</div><div class="sc-val">${s.v}</div></div>`).join('');document.getElementById('rep-tb').innerHTML=RDB.map(r=>`<tr><td><span class="badge b-red">🚩 ${r.type}</span>${r._isRealReport?' <span style="font-size:9px;color:#22c55e;font-weight:700">LIVE</span>':''}</td><td style="color:#f0f0f5;font-weight:600">${r.pin}</td><td style="color:#8888aa">${r.by}</td><td style="color:#8888aa;font-size:12px">${fD(r.date)}</td><td>${sbdg(r.status)}</td><td>${r._isRealReport?`<button class="row-act ok" onclick="adminRestorePin(${r._realPinId});RDB.find(x=>x.id==='${r.id}').status='dismissed';renderReports();aToast('✅ Restored','success')">↩️ Restore</button><button class="row-act" onclick="RDB=RDB.filter(x=>x.id!=='${r.id}');renderReports();aToast('Removed from list','info')">🗑</button>`:`<button class="row-act" style="border-color:#a855f7;color:#a855f7" onclick="RDB.find(x=>x.id===${r.id}).status='actioned';renderReports();aToast('⚡ Action liya','success')">⚡</button><button class="row-act" onclick="RDB.find(x=>x.id===${r.id}).status='dismissed';renderReports();aToast('Dismissed','info')">🔕</button><button class="row-act" onclick="RDB=RDB.filter(x=>x.id!==${r.id});renderReports();aToast('🗑 Deleted','success')">🗑</button>`}</td></tr>`).join('')||`<tr><td colspan="6" style="text-align:center;color:#8888aa;padding:20px">No pending reports ✅</td></tr>`;updateAdminCounts();}
 function initAnalytics(){const mxU=Math.max(...AN.mU);document.getElementById('an-users').innerHTML=AN.mU.map((v,i)=>`<div class="mc-bar" style="height:${Math.round(v/mxU*100)}%;background:#3b82f6" title="${AN.mo[i]}: ${fN(v)}"></div>`).join('');const fbR=[3,3,4,4,4,5,4,5,5,4,4,4];document.getElementById('an-fb').innerHTML=fbR.map((v,i)=>`<div class="mc-bar" style="height:${Math.round(v/5*100)}%;background:#f59e0b" title="${AN.mo[i]}: ${v}★"></div>`).join('');}
-function changePw(){const np=document.getElementById('newPw').value,cp=document.getElementById('cnfPw').value;if(np.length<8){aToast('Min 8 characters','error');return;}if(np!==cp){aToast('Passwords match nahi','error');return;}aToast('🔑 Password changed!','success');document.getElementById('newPw').value='';document.getElementById('cnfPw').value='';}
+function changePw(){const np=document.getElementById('newPw').value,cp=document.getElementById('cnfPw').value;if(np.length<8){aToast('Min 8 characters','error');return;}if(np!==cp){aToast('Passwords do not match','error');return;}aToast('🔑 Password changed!','success');document.getElementById('newPw').value='';document.getElementById('cnfPw').value='';}
 
 
 // ══════════════════════════════════════════════
@@ -3908,7 +4416,7 @@ function saveNote() {
   localStorage.setItem('cp_pin_notes', JSON.stringify(pinNotes));
   closeNoteModal();
   applyFilters(); // re-render to show dot
-  toast('📝 Note save ho gaya!');
+  toast('📝 Note saved!');
 }
 
 // ══════════════════════════════════════════════
@@ -3965,7 +4473,7 @@ function saveToBoard(pinId) {
       saveBoards();
       toast(`📋 "${BOARDS[idx].name}" saved to collection!`);
     } else {
-      toast('⚠️ Ye pin pehle se is board mein hai');
+      toast('⚠️ This pin is already in this board');
     }
   }
 }
@@ -3974,6 +4482,7 @@ function openBoards() {
   renderBoards();
   document.getElementById('boardsPage').classList.add('open');
   setBn('boards');
+  pushHistory('boards');
 }
 function closeBoards() {
   document.getElementById('boardsPage').classList.remove('open');
@@ -4041,6 +4550,7 @@ function openBoardDetail(id) {
   }).join('');
 
   document.getElementById('boardDetailPage').classList.add('open');
+  pushHistory('boardDetail');
 }
 
 function closeBoardDetail() {
@@ -4055,7 +4565,7 @@ function openBoardNoteEdit() {
     b.note = newNote;
     saveBoards();
     document.getElementById('boardStickyText').textContent = newNote || 'Add notes for this collection...';
-    toast('📋 Board note update ho gaya!');
+    toast('📋 Board note updated!');
   }
 }
 
@@ -4068,7 +4578,7 @@ function addCollaborator() {
   saveBoards();
   const membersHtml = b.members.map(m => `<img class="collab-avatar" src="${m}" title="Member">`).join('');
   document.getElementById('collabMembers').innerHTML = membersHtml + `<button class="collab-add-btn" onclick="addCollaborator()">+</button>`;
-  toast('👥 Collaborator add ho gaya!');
+  toast('👥 Collaborator added!');
 }
 
 function openNewBoardModal() { document.getElementById('newBoardModal').classList.add('open'); }
@@ -4085,7 +4595,7 @@ function createBoard() {
   saveBoards();
   closeNewBoardModal();
   renderBoards();
-  toast('📋 Board "' + name + '" ban gaya!');
+  toast('📋 Board "' + name + '" created!');
   document.getElementById('nb-name').value = '';
   document.getElementById('nb-note').value = '';
 }
@@ -4187,13 +4697,13 @@ const _lastPinObs = new IntersectionObserver(entries=>{
       const vs = p.vid || p.src || '';
       const rawT = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)/i)) ? p.src : vs;
       const ts = isB64s ? p.src : _thumb(rawT, 400, 711);
-      media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">${ts?`<img class="reel-thumb" src="${ts}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onerror="this.style.display='none';setTimeout(()=>{this.src=this.src+'?r='+Date.now();this.style.display='block'},3000)">`:''}<video id="rv${p.id}" src="${vs}" muted loop playsinline preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video><div class="reel-badge">🎬 Reel</div><div class="reel-dur">▶ 0:${String(15+p.id%45).padStart(2,'0')}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
+      media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">${ts?`<img class="reel-thumb" src="${ts}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onerror="this.style.display='none';_retryThumbLoad(this)">`:''}<video id="rv${p.id}" src="${vs}" muted loop playsinline preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video><div class="reel-badge">🎬 Reel</div><div class="reel-dur">▶ ${_pinDurLabel(p)}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
     } else if(p.type==='video'){
       const isB64s2 = p.src && p.src.startsWith('data:');
       const vs2 = p.vid || p.src;
       const rawT2 = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)/i)) ? p.src : vs2;
       const vt = isB64s2 ? p.src : _thumb(rawT2, 400, imgH);
-      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)"><video id="rv${p.id}" src="${vs2}" muted loop playsinline preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video>${vt?`<img class="vid-thumb" src="${vt}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none';setTimeout(()=>{this.src=this.src+'?r='+Date.now();this.style.display='block'},3000)">`:''}<div class="video-badge">🎥 Video</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
+      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)"><video id="rv${p.id}" src="${vs2}" muted loop playsinline preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video>${vt?`<img class="vid-thumb" src="${vt}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none';_retryThumbLoad(this)">`:''}<div class="video-badge">🎥 Video</div><div class="reel-dur">▶ ${_pinDurLabel(p)}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
     } else {
       const is = isB64s ? p.src : (p.src && p.src.includes('?') ? p.src+'&auto=format&fit=crop&h='+imgH : (p.src||'')+'?auto=format&fit=crop&h='+imgH);
       media=`<div class="pin-img-wrap"><img src="${is}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" loading="lazy" alt="${p.title}" onerror="this.style.background='#f0f0f0'"></div>`;
@@ -4203,7 +4713,7 @@ const _lastPinObs = new IntersectionObserver(entries=>{
     card.setAttribute('onclick',`openDetail(${p.id})`);
     card.setAttribute('onmouseenter',`hoverPlay(${p.id})`);
     card.setAttribute('onmouseleave',`hoverStop(${p.id})`);
-    card.innerHTML=media+`<div class="pin-overlay"><div class="overlay-top"><button class="save-btn${savedSet.has(p.id)?' saved':''}" onclick="tgSave(event,${p.id})">${savedSet.has(p.id)?'✔ Saved':'Save'}</button><button class="ov-btn del-btn" data-owner="${(p.user&&p.user.name)||''}" onclick="deletePin(event,${p.id})" title="Delete" style="background:rgba(220,38,38,.9);color:#fff;font-size:16px;display:none">🗑️</button></div><div class="overlay-bottom">${p.type!=='image'?`<button class="ov-btn" onclick="openReels(event,${p.id})">🎬</button>`:''}<button class="ov-btn" onclick="openShareFor(event,${p.id})">📤</button><button class="ov-btn" onclick="dlPin(event,${p.id})">⬇️</button><button class="ov-btn" onclick="openReportModal(event,${p.id})" title="Report">🚩</button></div></div><button class="note-icon-btn" onclick="openNoteModal(event,${p.id})" title="Note">📝</button>${pinNotes[p.id]?'<div class="note-dot"></div>':''}<button class="vsearch-btn" onclick="openVSearch(event,${p.id})" title="Visual search">🔍</button><div class="pin-info"><div class="pin-title">${p.title}</div></div><div class="pin-meta"><div class="pin-user"><img src="${p.user.avatar}" alt="${p.user.name}"><span>${p.user.name}</span></div><span class="pin-likes">❤️ ${p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes}</span></div>`;
+    card.innerHTML=media+`<div class="pin-overlay"><div class="overlay-top"><button class="save-btn${savedSet.has(p.id)?' saved':''}" onclick="tgSave(event,${p.id})">${savedSet.has(p.id)?'✔ Saved':'Save'}</button><button class="ov-btn del-btn" data-owner="${(p.user&&p.user.name)||''}" onclick="deletePin(event,${p.id})" title="Delete" style="background:rgba(220,38,38,.9);color:#fff;font-size:16px;display:none">🗑️</button></div><div class="overlay-bottom">${p.type!=='image'?`<button class="ov-btn" onclick="openDetail(${p.id})">🎬</button>`:''}<button class="ov-btn" onclick="openShareFor(event,${p.id})">📤</button><button class="ov-btn" onclick="dlPin(event,${p.id})">⬇️</button><button class="ov-btn" onclick="openReportModal(event,${p.id})" title="Report">🚩</button></div></div><button class="note-icon-btn" onclick="openNoteModal(event,${p.id})" title="Note">📝</button>${pinNotes[p.id]?'<div class="note-dot"></div>':''}<button class="vsearch-btn" onclick="openVSearch(event,${p.id})" title="Visual search">🔍</button><div class="pin-info"><div class="pin-title">${p.title}</div></div><div class="pin-meta"><div class="pin-user"><img src="${p.user.avatar}" alt="${p.user.name}"><span>${p.user.name}</span></div><span class="pin-likes">❤️ ${p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes}</span></div>`;
     // ✅ Mobile pe column-split layout hai toh shortest column mein append karo
     const cols = grid.querySelectorAll('.masonry-col');
     if (cols.length === 2) {
@@ -4373,11 +4883,7 @@ function doubleTapLike(id) {
 // ══════════════════════════════════════════════
 // 4. HAPTIC FEEDBACK (Save button)
 // ══════════════════════════════════════════════
-const _origTgSave = tgSave;
-function tgSave(e, id) {
-  if (navigator.vibrate) navigator.vibrate([20]);
-  _origTgSave(e, id);
-}
+// (tgSave already includes vibrate feedback — see original definition above)
 
 // ══════════════════════════════════════════════
 // 5. COMMENTS SYSTEM
@@ -4406,7 +4912,10 @@ function openComments(id) {
   _renderComments(id);
 
   document.getElementById('commentsDrawer').classList.add('open');
-  document.getElementById('commentInput').focus();
+  // ✅ Turant focus mat karo — keyboard turant khulne se mobile pe viewport
+  // resize glitch hota hai (fixed-position reel background ke saath conflict).
+  // User khud tap karega jab type karna ho.
+  pushHistory('comments');
 
   // ✅ Firestore se load karo
   loadCommentsFromFirestore(id);
@@ -4502,14 +5011,14 @@ function postComment() {
   const newC = {
     av  : safeAvatar,
     name: myClickPinName || myClickPinId || 'Guest',
-    text, time: 'Abhi', likes: 0
+    text, time: 'Just now', likes: 0
   };
   commentsDB[id].unshift(newC);
   localStorage.setItem('cp_comments', JSON.stringify(commentsDB));
   inp.value = '';
   if (navigator.vibrate) navigator.vibrate([15]);
   _renderComments(id);
-  toast('💬 Comment post ho gaya!');
+  toast('💬 Comment posted!');
 
   // Firestore mein bhi save karo
   if (db) {
@@ -4627,7 +5136,7 @@ function finishOnboarding() {
   localStorage.setItem('cp_onboarded', '1');
   localStorage.setItem('cp_interests', JSON.stringify(selectedInterests));
   document.getElementById('onboardingOverlay').classList.remove('open');
-  toast('🎉 Aapki personalized feed tayyar hai!');
+  toast('🎉 Your personalized feed is ready!');
   applyFilters();
 }
 
@@ -4778,7 +5287,7 @@ async function publishCollage() {
 
   // ✅ Step 1: Modal band karo aur pill show karo (minimize like upload)
   closeCollageCreator();
-  updateUploadPill('🎨 Collage ban raha hai...', 20);
+  updateUploadPill('🎨 Creating collage...', 20);
 
   // ✅ Step 2: Canvas pe merge karo (crossOrigin NAHI — base64 ke liye)
   let finalSrc = collageImages[0] || '';
@@ -4922,7 +5431,7 @@ function markAllRead() {
   INBOX_DATA.notif.forEach(n => n.unread = false);
   INBOX_DATA.req.forEach(n => n.unread = false);
   renderInboxTab(inboxTab);
-  toast('✅ Sab read mark ho gaya');
+  toast('✅ All marked as read');
 }
 
 // ✅ Firestore se notifications load karo
@@ -4987,10 +5496,10 @@ async function loadNotificationsFromFirestore() {
 }
 
 function timeSince(isoStr) {
-  if (!isoStr) return 'Abhi';
+  if (!isoStr) return 'Just now';
   const diff = Date.now() - new Date(isoStr).getTime();
   const m = Math.floor(diff / 60000);
-  if (m < 1) return 'Abhi';
+  if (m < 1) return 'Just now';
   if (m < 60) return m + ' min ago';
   const h = Math.floor(m / 60);
   if (h < 24) return h + ' hours ago';
@@ -5028,15 +5537,15 @@ function renderInboxTab(tab) {
           <div class="notif-text">${n.text}</div>
           <div class="notif-time">${n.time}</div>
           ${n.hasActions ? `<div class="notif-actions">
-            <button class="notif-btn accept" onclick="event.stopPropagation();toast('✅ Request accept kar liya!');this.closest('.notif-item').style.opacity='.5'">✓ Accept</button>
-            <button class="notif-btn decline" onclick="event.stopPropagation();toast('Request decline ho gaya');this.closest('.notif-item').style.opacity='.5'">✕ Decline</button>
+            <button class="notif-btn accept" onclick="event.stopPropagation();toast('✅ Request accepted!');this.closest('.notif-item').style.opacity='.5'">✓ Accept</button>
+            <button class="notif-btn decline" onclick="event.stopPropagation();toast('Request declined');this.closest('.notif-item').style.opacity='.5'">✕ Decline</button>
           </div>` : ''}
         </div>
         ${n.thumb ? `<img class="notif-thumb" src="${n.thumb}" alt="">` : ''}
       </div>`).join('') || '<div class="empty-tab"><span class="empty-tab-ic">🔔</span><p>No notifications yet</p></div>';
   } else if (tab === 'msgs') {
     el.innerHTML = INBOX_DATA.msgs.map(m => `
-      <div class="msg-item" onclick="toast('💬 Chat feature jald aa raha hai!')">
+      <div class="msg-item" onclick="toast('💬 Chat feature coming soon!')">
         <div style="position:relative;flex-shrink:0">
           <img class="msg-av" src="${m.av}" alt="">
           ${m.online ? '<div class="msg-online"></div>' : ''}
@@ -5058,8 +5567,8 @@ function renderInboxTab(tab) {
           <div class="notif-text">${r.text}</div>
           <div class="notif-time">${r.time}</div>
           <div class="notif-actions">
-            <button class="notif-btn accept" onclick="event.stopPropagation();toast('✅ Accept ho gaya!');this.closest('.notif-item').style.opacity='.5'">Preview & Accept</button>
-            <button class="notif-btn decline" onclick="event.stopPropagation();toast('Decline ho gaya');this.closest('.notif-item').style.opacity='.5'">Decline</button>
+            <button class="notif-btn accept" onclick="event.stopPropagation();toast('✅ Accepted!');this.closest('.notif-item').style.opacity='.5'">Preview & Accept</button>
+            <button class="notif-btn decline" onclick="event.stopPropagation();toast('Declined');this.closest('.notif-item').style.opacity='.5'">Decline</button>
           </div>
         </div>
       </div>`).join('') || '<div class="empty-tab"><span class="empty-tab-ic">👥</span><p>No requests yet</p></div>';
@@ -5272,6 +5781,7 @@ function filterProfileContent(q) {
 function openSettings() {
   renderSettings();
   document.getElementById('settingsPage').classList.add('open');
+  pushHistory('settings');
 }
 function closeSettings() {
   document.getElementById('settingsPage').classList.remove('open');
@@ -5537,7 +6047,7 @@ function saveEditProfile() {
   }
 
   closeEditProfileModal();
-  toast('✅ Profile update ho gaya! DP sab posts mein update ho gayi.');
+  toast('✅ Profile updated! Your photo has been updated across all posts.');
   const pp = document.getElementById('profilePage');
   if (pp && pp.classList.contains('open')) openUserProfile();
   const sp = document.getElementById('settingsPage');
@@ -5642,6 +6152,27 @@ function openReportModal(e, id) {
   if (btn) { btn.disabled = true; btn.style.background = '#ccc'; btn.style.cursor = 'not-allowed'; }
   document.getElementById('reportModal')?.classList.add('open');
 }
+
+// ✅ Detail page ke ⋮ menu ke liye — Report option
+function toggleDetailMoreMenu(e) {
+  e.stopPropagation();
+  const m = document.getElementById('detailMoreMenu');
+  if (!m) return;
+  m.style.display = (m.style.display === 'block') ? 'none' : 'block';
+}
+function reportFromDetail() {
+  const m = document.getElementById('detailMoreMenu');
+  if (m) m.style.display = 'none';
+  openReportModal(new Event('x'), openPinId);
+}
+// ✅ Detail more-menu ko bahar click karne se band karo
+document.addEventListener('click', function(e) {
+  const m = document.getElementById('detailMoreMenu');
+  const b = document.getElementById('detailMoreBtn');
+  if (m && m.style.display === 'block' && e.target !== b && !m.contains(e.target)) {
+    m.style.display = 'none';
+  }
+});
 function closeReportModal() {
   document.getElementById('reportModal')?.classList.remove('open');
   _reportingPinId = null;
@@ -5735,7 +6266,7 @@ function saveNewPassword() {
   }
   localStorage.setItem('cp_pw', btoa(np));
   closePasswordModal();
-  toast('🔑 Password change ho gaya!');
+  toast('🔑 Password changed!');
 }
 
 function openAddAccountModal() {
@@ -5761,7 +6292,7 @@ function switchAccount(name, id) {
   localStorage.setItem('cp_user_name', name);
   localStorage.setItem('cp_user_id', id);
   closeAddAccountModal();
-  toast('✅ Account switch ho gaya: ' + id);
+  toast('✅ Switched account: ' + id);
   renderSettings();
 }
 function addNewAccountSubmit() {
@@ -5779,7 +6310,7 @@ function addNewAccountSubmit() {
   closeAddAccountModal();
   cpUpdateAuthUI(newUser);
   renderSettings();
-  toast('✅ Account switch ho gaya: ' + id);
+  toast('✅ Switched account: ' + id);
 }
 
 function downloadMyData() {
@@ -5797,7 +6328,7 @@ function downloadMyData() {
   a.href = url; a.download = 'clickpin_data.json';
   document.body.appendChild(a); a.click();
   document.body.removeChild(a); URL.revokeObjectURL(url);
-  toast('📦 Data download ho gaya!');
+  toast('📦 Data downloaded!');
 }
 
 
@@ -5876,7 +6407,7 @@ function submitRegister() {
   const idRaw = document.getElementById('regId').value.trim();
   const bio = document.getElementById('regBio').value.trim();
   if (!name) { toast('⚠️ Name is required!'); return; }
-  if (!idRaw) { toast('⚠️ ID zaruri hai!'); return; }
+  if (!idRaw) { toast('⚠️ ID is required!'); return; }
   const id = idRaw.startsWith('@') ? idRaw : '@'+idRaw;
   myClickPinName = name;
   myClickPinId = id;
@@ -6077,7 +6608,7 @@ async function cpCreateAccount() {
   const pass = document.getElementById('ca-pass')?.value || '';
   const errEl = document.getElementById('ca-error');
   if (!validateText(name, 50)) {
-    if (errEl) { errEl.textContent = '⚠️ Naam mein invalid text hai!'; errEl.style.display = 'block'; }
+    if (errEl) { errEl.textContent = '⚠️ Name contains invalid text!'; errEl.style.display = 'block'; }
     return;
   }
   if (!validateEmail(email)) {
@@ -6159,15 +6690,19 @@ function _checkFilename(filename) {
 
 // Title + desc + filename check
 function checkAdultContent(title, desc, filename) {
-  if (_containsAdultContent(title)) return { blocked: true, reason: 'Title mein inappropriate content hai!' };
-  if (_containsAdultContent(desc))  return { blocked: true, reason: 'Description mein inappropriate content hai!' };
-  if (_checkFilename(filename))     return { blocked: true, reason: 'File name inappropriate hai!' };
+  if (_containsAdultContent(title)) return { blocked: true, reason: 'Title contains inappropriate content!' };
+  if (_containsAdultContent(desc))  return { blocked: true, reason: 'Description contains inappropriate content!' };
+  if (_checkFilename(filename))     return { blocked: true, reason: 'File name is inappropriate!' };
   return { blocked: false };
 }
 
 // ✅ VIDEO BACKGROUND STOP — notification mein play na ho
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
+    // ✅ Agar yeh humare apne history navigation (_handleBackNav) ki wajah se
+    // trigger hua hai, toh video pause mat karo — yeh sirf hash-change ka
+    // side-effect hai, asal mein app background mein nahi gayi.
+    if (_backNavHandling) return;
     // Page background mein gayi — sab videos pause karo
     document.querySelectorAll('video').forEach(v => {
       if (!v.paused) {
@@ -6186,20 +6721,10 @@ document.addEventListener('visibilitychange', () => {
   // Page wapas aai — koi auto-resume mat karo
 });
 
-// Reels close hone pe bhi sab band karo
-const _origCloseReels = closeReels;
-function closeReels() {
-  document.querySelectorAll('.rs-slide video, #reelsView video').forEach(v => {
-    v.pause();
-    v.src = '';
-    v.load();
-  });
-  if ('mediaSession' in navigator) {
-    navigator.mediaSession.playbackState = 'none';
-    try { navigator.mediaSession.metadata = null; } catch(e) {}
-  }
-  _origCloseReels();
-}
+// ✅ Reels close cleanup ab upar wale asli closeReels() function mein hi
+// merge kar diya gaya hai (pehle yahan ek doosra "function closeReels(){}"
+// tha jo JS hoisting ki wajah se khud ko hi infinitely call kar raha tha —
+// yehi wajah thi ki reel band hi nahi hoti thi aur back button "atak" jaata tha).
 
 // Detail modal close pe video band karo
 const _origCloseDetail = closeDetail;
@@ -6361,7 +6886,7 @@ try {
 <!-- ══════════ ACTION BOARDS PAGE ══════════ -->
 <div class="boards-page" id="boardsPage">
   <div class="boards-header">
-    <button onclick="closeBoards()" style="background:#f0f0f0;border:none;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer">← Wapas</button>
+    <button onclick="goBack()" style="background:#f0f0f0;border:none;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer">← Wapas</button>
     <h2>📋 My Collections</h2>
     <button onclick="openNewBoardModal()" style="background:var(--red);color:#fff;border:none;padding:9px 18px;border-radius:20px;font-size:13px;font-weight:700;cursor:pointer">+ New Collection</button>
   </div>
@@ -6371,7 +6896,7 @@ try {
 <!-- ══════════ BOARD DETAIL PAGE ══════════ -->
 <div class="board-detail-page" id="boardDetailPage">
   <div class="board-detail-header">
-    <button onclick="closeBoardDetail()" style="background:#f0f0f0;border:none;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer">←</button>
+    <button onclick="goBack()" style="background:#f0f0f0;border:none;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer">←</button>
     <div>
       <div style="font-weight:700;font-size:16px" id="bdTitle">Board</div>
       <div style="font-size:12px;color:var(--muted)" id="bdMeta"></div>
@@ -6410,7 +6935,10 @@ try {
       <label>👥 Collaboration Board</label>
       <button class="toggle" id="nb-collab" onclick="this.classList.toggle('on')"></button>
     </div>
-    
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button onclick="closeNewBoardModal()" style="flex:1;background:#f0f0f0;border:none;border-radius:24px;padding:13px;font-size:14px;font-weight:700;color:var(--dark);cursor:pointer">Cancel</button>
+      <button onclick="createBoard()" style="flex:2;background:linear-gradient(135deg,#ec4899,#a855f7);border:none;border-radius:24px;padding:13px;font-size:14px;font-weight:700;color:#fff;cursor:pointer">📋 Create Board</button>
+    </div>
   </div>
 </div>
 
@@ -6421,7 +6949,7 @@ try {
     <div class="comments-header">
       <div class="sheet-handle" style="position:absolute;top:10px;left:50%;transform:translateX(-50%)"></div>
       <h4>💬 Comments <span id="commentsCount" style="color:var(--muted);font-weight:500;font-size:13px"></span></h4>
-      <button onclick="closeComments()" style="background:#f0f0f0;border:none;width:32px;height:32px;border-radius:50%;font-size:15px;cursor:pointer">✕</button>
+      <button onclick="goBack()" style="background:#f0f0f0;border:none;width:32px;height:32px;border-radius:50%;font-size:15px;cursor:pointer">✕</button>
     </div>
     <div class="comments-list" id="commentsList"></div>
     <div class="comments-input-row">
@@ -6501,7 +7029,7 @@ try {
 <!-- ══════════ INBOX PAGE ══════════ -->
 <div class="inbox-page" id="inboxPage">
   <div class="inbox-header">
-    <button onclick="closeInbox()" style="background:#f0f0f0;border:none;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;flex-shrink:0">←</button>
+    <button onclick="goBack()" style="background:#f0f0f0;border:none;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;flex-shrink:0">←</button>
     <h2>Inbox</h2>
     <button onclick="markAllRead()" style="background:none;border:none;font-size:12px;font-weight:700;color:var(--red);cursor:pointer">Mark All Read</button>
   </div>
@@ -6517,7 +7045,7 @@ try {
 <div class="profile-page" id="profilePage">
   <!-- Hero -->
   <div class="profile-hero" id="profileHero">
-    <button onclick="closeUserProfile()" style="position:absolute;top:14px;left:16px;background:rgba(255,255,255,.2);border:none;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;color:#fff;backdrop-filter:blur(6px)">←</button>
+    <button onclick="goBack()" style="position:absolute;top:14px;left:16px;background:rgba(255,255,255,.2);border:none;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;color:#fff;backdrop-filter:blur(6px)">←</button>
     <button onclick="openSettings()" style="position:absolute;top:14px;right:16px;background:rgba(255,255,255,.2);border:none;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;color:#fff;backdrop-filter:blur(6px)">⚙️</button>
     <div style="display:flex;align-items:flex-end;gap:14px;padding-bottom:0">
       <div class="profile-av-wrap" onclick="openEditProfileModal()" style="cursor:pointer" title="Photo change">
@@ -6562,7 +7090,7 @@ try {
 <!-- ══════════ ACCOUNT SETTINGS ══════════ -->
 <div class="settings-page" id="settingsPage">
   <div class="settings-header">
-    <button onclick="closeSettings()" style="background:#f0f0f0;border:none;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer">←</button>
+    <button onclick="goBack()" style="background:#f0f0f0;border:none;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer">←</button>
     <h2>Settings</h2>
   </div>
   <div class="settings-body" id="settingsBody">
@@ -6870,9 +7398,11 @@ function initFirebase() {
   db = firebase.firestore();
   fbAuth = firebase.auth();
 
-  // ✅ PAGE LOAD: Pehle dummy data render karo, phir Firestore load
+  // ✅ PAGE LOAD: Dummy data turant render karo, Firestore bhi turant load karo
+  // (no artificial delay — dono ek saath jaldi dikhne chahiye)
   applyFilters(); // Turant dummy posts dikha do
-  setTimeout(() => loadAllPostsFromFirestore(), 500);
+  loadAllPostsFromFirestore(); // Turant uploaded posts bhi load karo
+  _triggerAd('banner'); // ✅ App khulte hi bottom banner ad dikhao (persistent)
 
   // Auth state listener — jab bhi login/logout ho
   fbAuth.onAuthStateChanged(async (user) => {
@@ -7249,7 +7779,7 @@ async function cpSignIn() {
       const users = JSON.parse(localStorage.getItem('cp_all_users') || '{}');
       const user = users[email];
       if (!user) {
-        errEl.textContent = '❌ Email registered nahi hai! Pehle Create Account.';
+        errEl.textContent = '❌ Email is not registered! Please Create Account first.';
         errEl.style.display = 'block';
       } else if (atob(user.password) !== pass) {
         errEl.textContent = '❌ Incorrect password!';
@@ -7311,7 +7841,7 @@ async function sendPasswordReset() {
     return;
   }
 
-  if (btn) { btn.textContent = '⏳ Bhej raha hai...'; btn.disabled = true; btn.style.opacity = '0.7'; }
+  if (btn) { btn.textContent = '⏳ Sending...'; btn.disabled = true; btn.style.opacity = '0.7'; }
 
   const isLocal = location.protocol === 'file:';
   if (fbAuth && !isLocal) {
@@ -7325,7 +7855,7 @@ async function sendPasswordReset() {
     } catch(e) {
       const msg = e.code === 'auth/user-not-found'    ? '❌ This email is not registered!'
         : e.code === 'auth/invalid-email'             ? '❌ Invalid email format!'
-        : e.code === 'auth/network-request-failed'    ? '⚠️ Internet check karo!'
+        : e.code === 'auth/network-request-failed'    ? '⚠️ Please check your internet connection!'
         : '❌ ' + (e.message || 'Error');
       msgEl.textContent = msg;
       msgEl.style.background = '#fff3f3';
@@ -7335,7 +7865,7 @@ async function sendPasswordReset() {
     }
   } else {
     // Local fallback
-    msgEl.textContent = '⚠️ Password reset sirf hosted app pe kaam karta hai. Hosted version use karo.';
+    msgEl.textContent = '⚠️ Password reset only works on the hosted app. Please use the hosted version.';
     msgEl.style.background = '#fffbeb';
     msgEl.style.color = '#b45309';
     msgEl.style.display = 'block';
@@ -7355,7 +7885,7 @@ async function cpCreateAccount() {
 
   if (!name) { errEl.textContent = '⚠️ Name is required!'; errEl.style.display = 'block'; return; }
   if (!email.includes('@')) { errEl.textContent = '⚠️ Sahi email likhein!'; errEl.style.display = 'block'; return; }
-  if (!cpid) { errEl.textContent = '⚠️ Showfy ID zaruri hai!'; errEl.style.display = 'block'; return; }
+  if (!cpid) { errEl.textContent = '⚠️ Showfy ID is required!'; errEl.style.display = 'block'; return; }
   if (pass.length < 6) { errEl.textContent = '⚠️ Password must be at least 6 characters!'; errEl.style.display = 'block'; return; }
   if (pass !== cpass) { errEl.textContent = '⚠️ Passwords do not match!'; errEl.style.display = 'block'; return; }
 
@@ -7463,7 +7993,7 @@ function cpLogout() {
 // ── FIREBASE DELETE ACCOUNT ──
 async function cpDeleteAccount() {
   if (!confirm('⚠️ Your account will be permanently deleted! Are you sure?')) return;
-  if (!confirm('Ek baar aur confirm karo — Haan, delete karna hai?')) return;
+  if (!confirm('One more confirmation — yes, delete it?')) return;
 
   if (fbAuth && fbAuth.currentUser) {
     try {
@@ -7481,15 +8011,10 @@ async function cpDeleteAccount() {
    'cp_boards','cp_collages','cp_followers','cp_pin_notes','cp_private'].forEach(k => localStorage.removeItem(k));
   myClickPinName = ''; myClickPinId = '';
   closeSettings(); cpUpdateAuthUI(null);
-  toast('🗑️ Account delete ho gaya. Alvida!');
+  toast('🗑️ Account deleted. Goodbye!');
 }
 
-// Override tgSave to also sync with Firestore
-const _origTgSaveFirebase = tgSave;
-function tgSave(e, id) {
-  _origTgSaveFirebase(e, id);
-  saveSavedToFirestore();
-}
+// (tgSave already syncs with Firestore — see original definition above)
 
 // Close modals on Escape
 document.addEventListener('keydown', e => {
