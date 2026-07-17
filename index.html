@@ -3787,7 +3787,7 @@ function handleFileSelect(inp){
 // serverless function, "api/bunny-proxy.js") use karte hain — API key
 // ab sirf server pe secret rehti hai, browser mein kahin nahi hai.
 const BUNNY_STREAM_CDN_HOST = 'vz-bdc4202c-15e.b-cdn.net';
-const BUNNY_PROXY_URL = '/api/bunny-proxy'; // apne Vercel project ka proxy endpoint
+const BUNNY_PROXY_URL = '/api/proxy'; // apne Vercel project ka proxy endpoint (file: api/proxy.js)
 
 async function uploadVideoToBunnyStream(file, title, onProgress) {
   // Step 1: video "slot" create karo (proxy ke through)
