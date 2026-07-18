@@ -2193,6 +2193,138 @@ const AN={daily:[420,380,510,490,620,580,710,660,730,690,810,780,850,920],mU:[12
 // ─── STATE ───
 const AC={u:'admin',p:'showfy@2025'};
 let aCat='All',aTab='home',savedSet=new Set(),likedSet=new Set(),openPinId=null,sharePin=null;
+
+// ══════════════════════════════════════════════════════════════════
+// ✅ RECOMMENDATION ALGORITHM ENGINE
+// ══════════════════════════════════════════════════════════════════
+// Teen hisse hain:
+// 1) Interest tracking  — user jis category ki cheez zyada dekhe/pasand
+//    kare, uska ek "affinity score" banta hai (Home, Food, Islamic, etc.)
+// 2) Trending/viral score — koi bhi post (naye creator ki bhi) agar
+//    THODE time mein ZYADA engagement paaye, uska score badh jaata hai
+//    — TikTok/Instagram jaisa "kisi ki bhi reel viral ho sakti hai"
+// 3) Watch-time tracking — video/reel poori dekhi ya beech mein chhodi,
+//    ye bhi ek signal hai ki content pasand aaya ya nahi
+//
+// Sab kuch client-side (phone mein hi) store hota hai — koi extra
+// server/backend nahi chahiye, isliye ye current app ke structure ke
+// saath seedha kaam karta hai.
+// ══════════════════════════════════════════════════════════════════
+
+const ALGO_STORAGE_KEY = 'cp_algo_interests_v1';
+const ALGO_WATCH_KEY = 'cp_algo_watchtime_v1';
+
+// ── Interest profile: { categoryName: score } ──
+let userInterests = {};
+try { userInterests = JSON.parse(localStorage.getItem(ALGO_STORAGE_KEY) || '{}'); } catch(e) { userInterests = {}; }
+
+function _saveInterests() {
+  try { localStorage.setItem(ALGO_STORAGE_KEY, JSON.stringify(userInterests)); } catch(e) {}
+}
+
+// ✅ Alag-alag actions ka alag "weight" hai — jaise like sirf dekhne se
+// zyada strong signal hai ki content pasand aaya, comment usse bhi zyada.
+const ALGO_WEIGHTS = {
+  view: 1,      // post grid mein dikhi / thumbnail play hui
+  fullView: 2,  // poori tarah khola gaya (detail/reel fullscreen)
+  like: 5,
+  comment: 8,
+  share: 6,
+  save: 7,
+  watchComplete: 4 // reel/video poori dekhi (skip nahi ki)
+};
+
+// ✅ Interest score record karo — category ke hisaab se
+function trackInterest(category, action) {
+  if (!category) return;
+  const weight = ALGO_WEIGHTS[action] || 1;
+  userInterests[category] = (userInterests[category] || 0) + weight;
+  // ✅ Decay — bahut purane interests ka asar dheere-dheere kam ho,
+  // taaki agar user ka interest badal jaaye to feed bhi adapt ho jaaye
+  Object.keys(userInterests).forEach(cat => {
+    if (cat !== category) userInterests[cat] *= 0.998;
+  });
+  _saveInterests();
+}
+
+// ✅ Ek post ke saath user ka "match score" — jitna zyada, utna hi
+// relevant hai wo post is user ke liye
+function getInterestScore(post) {
+  const cat = post.cat || 'Home';
+  return userInterests[cat] || 0;
+}
+
+// ── Trending / Viral score ──
+// Formula: engagement jitna zyada aur jitna KAM time mein hua utna zyada
+// weight milta hai — isse naye creators ki reels bhi viral ho sakti hain,
+// sirf purane bade accounts hi hamesha top pe nahi rahenge.
+function getTrendingScore(post) {
+  const likes = post.likes || 0;
+  const commentCount = (typeof commentsDB !== 'undefined' && commentsDB[post.id]) ? commentsDB[post.id].length : 0;
+  const shareCount = post._shareCount || 0;
+  const saveCount = post._saveCount || 0;
+
+  const engagement = (likes * 1) + (commentCount * 2) + (shareCount * 1.5) + (saveCount * 1.8);
+
+  // ✅ Recency multiplier — jitni nayi post, utna zyada boost milta hai
+  // shuru mein (taaki naye upload ko chance mile viral hone ka), lekin
+  // ye boost time ke saath dheere-dheere kam hota jaata hai
+  const ageHours = post._postTime ? (Date.now() - post._postTime) / 3600000 : 999;
+  let recencyBoost;
+  if (ageHours < 1) recencyBoost = 3.0;       // pehla ghanta — max boost
+  else if (ageHours < 6) recencyBoost = 2.2;
+  else if (ageHours < 24) recencyBoost = 1.6;
+  else if (ageHours < 72) recencyBoost = 1.2;
+  else recencyBoost = 1.0;
+
+  // ✅ Velocity — agar engagement bahut kam samay mein hua hai to extra boost
+  // (jaise 1 ghante mein hi 50 likes aa gaye — ye "viral ho rahi hai" ka sign hai)
+  const velocity = ageHours > 0 ? engagement / Math.max(ageHours, 0.1) : engagement;
+  const velocityBoost = Math.min(velocity / 5, 3.0); // cap lagaya taaki koi ek post hi hamesha hावी na ho
+
+  return (engagement * recencyBoost) + (velocityBoost * 10);
+}
+
+// ── Watch-time tracking ──
+let watchTimeData = {};
+try { watchTimeData = JSON.parse(localStorage.getItem(ALGO_WATCH_KEY) || '{}'); } catch(e) { watchTimeData = {}; }
+
+function trackWatchTime(postId, watchedSeconds, totalSeconds) {
+  if (!totalSeconds || totalSeconds <= 0) return;
+  const completionRatio = Math.min(watchedSeconds / totalSeconds, 1);
+  watchTimeData[postId] = completionRatio;
+  try { localStorage.setItem(ALGO_WATCH_KEY, JSON.stringify(watchTimeData)); } catch(e) {}
+
+  const post = PIN_DATA.find(p => p.id === postId);
+  if (!post) return;
+  // ✅ Agar video 80%+ dekhi gayi, isse strong "pasand aaya" signal maano
+  if (completionRatio >= 0.8) {
+    trackInterest(post.cat, 'watchComplete');
+  }
+}
+
+// ── FINAL RANKING — sabko combine karke feed order banata hai ──
+function getRankedFeed(list) {
+  // ✅ Har post ko ek combined score do: (user ka interest match) + (trending/viral score)
+  // Weights: interest ka thoda zyada weight (personalization important hai),
+  // lekin trending bhi kaafi weight rakhta hai (taaki naye/viral posts bhi dikhein)
+  const scored = list.map(p => {
+    const interestScore = getInterestScore(p);
+    const trendingScore = getTrendingScore(p);
+    const combined = (interestScore * 1.4) + (trendingScore * 1.0);
+    return { post: p, score: combined };
+  });
+
+  // ✅ Thoda randomness mix karo (±15%) taaki feed hamesha EXACT wahi order
+  // mein na aaye — thoda variety/discovery bana rahe, bilkul predictable na ho
+  scored.forEach(s => {
+    const jitter = 1 + (Math.random() * 0.3 - 0.15);
+    s.score *= jitter;
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map(s => s.post);
+}
 let upType='image',upData=null,fbType=null,fbStars=0;
 const PER=6;let uPg=1,pPg=1;
 let deferredPrompt=null;
@@ -2646,7 +2778,7 @@ function hoverStop(id){
 }
 
 // ─── SAVE ───
-function tgSave(e,id){e.stopPropagation();if(navigator.vibrate)navigator.vibrate([20]);savedSet.has(id)?savedSet.delete(id):savedSet.add(id);toast(savedSet.has(id)?'✅ Saved!':'Removed from saved');applyFilters();if(typeof saveSavedToFirestore==='function'){try{saveSavedToFirestore();}catch(e2){}}}
+function tgSave(e,id){e.stopPropagation();if(navigator.vibrate)navigator.vibrate([20]);const wasSaved=savedSet.has(id);savedSet.has(id)?savedSet.delete(id):savedSet.add(id);if(!wasSaved){const p=PIN_DATA.find(x=>x.id===id);if(p){p._saveCount=(p._saveCount||0)+1;trackInterest(p.cat,'save');}}toast(savedSet.has(id)?'✅ Saved!':'Removed from saved');applyFilters();if(typeof saveSavedToFirestore==='function'){try{saveSavedToFirestore();}catch(e2){}}}
 
 // ─── DETAIL ───
 function openDetail(id){
@@ -2675,6 +2807,7 @@ function openDetail(id){
   if (reelsViewEl && reelsViewEl.classList.contains('open')) closeReels();
   const p=PIN_DATA.find(x=>x.id===id);if(!p)return;
   openPinId=id;
+  trackInterest(p.cat, 'fullView');
   const isReel=p.type==='reel',isVid=p.type==='video';
   let mediaHtml='';
   // Stop any existing video
@@ -2882,6 +3015,7 @@ function likePost() {
     toast('❤️ Liked!');
     if (navigator.vibrate) navigator.vibrate([20]);
     likedPosts.push(String(p.id));
+    trackInterest(p.cat, 'like');
   }
 
   // ✅ LocalStorage mein save karo
@@ -3027,7 +3161,7 @@ function toggleDescReadMore(){
   }
 }
 
-function toggleDetailSave(){if(!openPinId)return;savedSet.has(openPinId)?savedSet.delete(openPinId):savedSet.add(openPinId);const sb=document.getElementById('detailSaveBtn');if(sb){sb.innerHTML=savedSet.has(openPinId)?'✔ Saved':'🔖 Save';}toast(savedSet.has(openPinId)?'✅ Saved!':'Removed from saved');applyFilters();}
+function toggleDetailSave(){if(!openPinId)return;const wasSaved=savedSet.has(openPinId);savedSet.has(openPinId)?savedSet.delete(openPinId):savedSet.add(openPinId);if(!wasSaved){const p=PIN_DATA.find(x=>x.id===openPinId);if(p){p._saveCount=(p._saveCount||0)+1;trackInterest(p.cat,'save');}}const sb=document.getElementById('detailSaveBtn');if(sb){sb.innerHTML=savedSet.has(openPinId)?'✔ Saved':'🔖 Save';}toast(savedSet.has(openPinId)?'✅ Saved!':'Removed from saved');applyFilters();}
 function openShareFromDetail(){if(openPinId)openShareFor(new Event('x'),openPinId);}
 function openReelsFromDetail(){closeDetail();openReels(null,openPinId);}
 
@@ -3073,6 +3207,9 @@ function shareTo(pl){
   };
   if(urls[pl]) setTimeout(()=>window.open(urls[pl],'_blank'), 300);
   toast('📲 '+pl.charAt(0).toUpperCase()+pl.slice(1)+' sharing...');
+  // ✅ Trending score ke liye share count aur interest track karo
+  sharePin._shareCount = (sharePin._shareCount || 0) + 1;
+  trackInterest(sharePin.cat, 'share');
 }
 
 async function nativeShare(){
@@ -3209,6 +3346,11 @@ async function deletePin(e, id) {
 function openReels(e,startId){
   if(e&&e.stopPropagation)e.stopPropagation();
   pushHistory('reels');
+  // ✅ Algorithm ke liye track karo — user ne is post ko fullscreen mein khola
+  if (startId) {
+    const startPost = PIN_DATA.find(p => p.id === startId);
+    if (startPost) trackInterest(startPost.cat, 'fullView');
+  }
   // ✅ Scroll-feed mein sirf: actual reels + chhoti videos (<=60s) shamil hon.
   // Lambi videos (>60s, ya duration pata nahi) is feed mein nahi aani chahiye —
   // unhe single-player (openDetail) mein khulna chahiye.
@@ -3302,6 +3444,12 @@ function buildReelsView(reels, startId){
         _reelSwipeCount++;
         if (_reelSwipeCount % AD_CONFIG.interstitialEveryNReels === 0) _triggerAd('interstitial');
       } else {
+        // ✅ Watch-time track karo (video leave hone se PEHLE) — algorithm ke
+        // liye signal ki user ne is reel ko kitna dekha (poora ya beech mein chhod di)
+        if (vid.currentTime > 0 && vid.duration > 0) {
+          const postId = parseInt((vid.id || '').replace('rsv', ''), 10);
+          if (!isNaN(postId)) trackWatchTime(postId, vid.currentTime, vid.duration);
+        }
         vid.pause();vid.currentTime=0;
       }
     }
@@ -3368,6 +3516,7 @@ function tgReelLike(btn,id){
     btn.dataset.liked='1';p.likes++;likedSet.add(id);
     ic.textContent='❤️';ic.style.filter='drop-shadow(0 0 8px #E60023)';ic.style.transform='scale(1.3)';
     setTimeout(()=>ic.style.transform='scale(1)',300);toast('❤️ Liked!');
+    trackInterest(p.cat,'like');
   }
   cnt.textContent=p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes;
 }
@@ -4664,14 +4813,27 @@ function applyFilters(){
       (p.cat||'').toLowerCase().includes(q) ||
       (p.user && p.user.name && p.user.name.toLowerCase().includes(q))
     );
-    // ✅ Sirf Home tab pe newest-first sort + interleave karo.
+    // ✅ Sirf Home tab pe algorithm-ranked feed banao.
     // Explore tab apna random shuffle already kar chuka hai — usse mat chedo.
     if (aTab !== 'explore') {
-      // Sabse naya upload hamesha top pe rahe — refresh ke baad bhi.
+      // ✅ FIX: sirf "newest first" dikhane ke bajaye ab ek smart feed banate
+      // hain — jisme user ke interests (jo categories wo zyada dekhta/like
+      // karta hai) aur trending/viral score (kam time mein zyada engagement)
+      // dono factor hote hain. Isse:
+      //  - User ko usi tarah ka content zyada dikhega jo use pasand hai
+      //  - Kisi bhi creator ki reel viral ho sakti hai (sirf purana/bada
+      //    account hona zaroori nahi)
+      // Sabse naye 2 posts ko hamesha top pe rakhte hain (taaki apna abhi
+      // upload kiya hua post turant dikhe), baaki sab algorithm se sort hote hain.
       const timedPosts = list.filter(p => p._postTime);
       const untimedPosts = list.filter(p => !p._postTime);
       timedPosts.sort((a, b) => b._postTime - a._postTime);
-      list = [...timedPosts, ...untimedPosts];
+
+      const pinnedNewest = timedPosts.slice(0, 2);
+      const restToRank = timedPosts.slice(2);
+      const rankedRest = getRankedFeed(restToRank);
+
+      list = [...pinnedNewest, ...rankedRest, ...untimedPosts];
 
       // Video/Reel aur Image posts ko interleave karo taaki masonry ke
       // dono columns mein videos equally distribute hon
@@ -5086,6 +5248,9 @@ function postComment() {
   if (navigator.vibrate) navigator.vibrate([15]);
   _renderComments(id);
   toast('💬 Comment posted!');
+  // ✅ Trending score ke liye interest track karo
+  const commentedPost = PIN_DATA.find(p => p.id === id);
+  if (commentedPost) trackInterest(commentedPost.cat, 'comment');
 
   // Firestore mein bhi save karo
   if (db) {
