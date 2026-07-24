@@ -2446,6 +2446,7 @@ function _handleBackNav() {
   }
 }
 window.addEventListener('hashchange', _handleBackNav);
+
 window.addEventListener('popstate', _handleBackNav);
 
 // ✅ UNIVERSAL BACK HELPER — X/close buttons isko call karein, taaki history
@@ -3398,6 +3399,11 @@ function _pauseAllOtherReelVideos(exceptVid){
 }
 function buildReelsView(reels, startId){
   const sc=document.getElementById('rsScroll');
+  // ✅ FIX: naya reels list banane se pehle purani (agar koi chal rahi ho)
+  // videos ko explicitly pause karo — sirf innerHTML badalne se kabhi-kabhi
+  // audio thodi der background mein bajti reh jaati thi is se pehle ki naya
+  // content aaye.
+  sc.querySelectorAll('.rs-video').forEach(v => { try { v.pause(); } catch(e){} });
   sc.innerHTML=reels.map((p,i)=>`
     <div class="rs-slide" id="rss${p.id}">
       <div class="rs-bg" style="background-image:url('${p.src}&auto=format&w=50')"></div>
@@ -7010,6 +7016,13 @@ document.addEventListener('visibilitychange', () => {
     }
   }
   // Page wapas aai — koi auto-resume mat karo
+});
+// ✅ Extra safety: kuch Android WebView versions 'visibilitychange' reliably
+// fire nahi karte jab app background mein jaati hai, lekin 'pagehide' zaroor
+// fire hota hai — isliye ek fallback yahan bhi laga rahe hain taaki audio
+// kabhi bhi background mein na reh jaaye.
+window.addEventListener('pagehide', () => {
+  document.querySelectorAll('video').forEach(v => { if (!v.paused) { try { v.pause(); } catch(e){} } });
 });
 
 // ✅ Reels close cleanup ab upar wale asli closeReels() function mein hi
