@@ -2474,6 +2474,33 @@ function _hardStopAllVideos() {
     try { navigator.mediaSession.playbackState = 'paused'; } catch(e) {}
   }
 }
+// ✅ FIX (asli, jad wala fix — fast swipe ke dauraan bhi): jab reel ek ke
+// baad ek jaldi-jaldi (fast swipe) se badalte hain, to browser kabhi-kabhi
+// EK HI batch mein 2-3 slides ko "visible" report kar deta hai — is 1-2
+// millisecond ki race mein purani video ka .play() already shuru ho chuka
+// hota hai is se pehle ki hum use pause karein, aur is se uski awaaz thodi
+// der ke liye "phas" jaati hai, aur agli 2-3 reel ki awaazein upar jama hoti
+// jaati hain. Isko control-flow se pakadna mushkil hai (ye ek timing race
+// hai), isliye ek "watchdog" laga rahe hain jo har 300ms mein khud check
+// karta hai: agar EK se zyada video ek saath (bina mute ke) baj rahi hain,
+// to sabse purani (jo pehle se chal rahi thi) ko turant pause kar deta hai,
+// sirf sabse nayi (abhi jo start hui) ko chalne deta hai. Isse chahe koi bhi
+// race ho, awaaz kabhi bhi 2 video ki ek saath nahi aayegi — har 300ms mein
+// khud-ba-khud theek ho jaayega.
+document.addEventListener('play', function(e){
+  if (e.target && e.target.tagName === 'VIDEO') {
+    e.target.dataset._playStartTs = String(Date.now());
+  }
+}, true);
+setInterval(function(){
+  const playingUnmuted = Array.from(document.querySelectorAll('video'))
+    .filter(v => !v.paused && !v.muted && !v.ended);
+  if (playingUnmuted.length > 1) {
+    playingUnmuted.sort((a,b) => (parseFloat(b.dataset._playStartTs||'0') - parseFloat(a.dataset._playStartTs||'0')));
+    // sirf sabse nayi (index 0) ko chalne do, baaki sab purani pause kar do
+    playingUnmuted.slice(1).forEach(v => { try { v.pause(); } catch(e){} });
+  }
+}, 300);
 
 // ─── CATEGORIES ───
 function buildCatBar(){
