@@ -2493,6 +2493,23 @@ document.addEventListener('play', function(e){
   }
 }, true);
 setInterval(function(){
+  // ✅ FIX (sabse zaroori): "back" chahe kisi bhi tarike se ho (apna X button,
+  // phone ka back button/gesture, ya kuch aur) — agar Reels ya Detail (video)
+  // screen band ho chuki hai (uspe 'open' class nahi hai), to uske andar ki
+  // video KABHI bhi chalti hui nahi honi chahiye. Ye check control-flow
+  // (kis button se back hua) par depend nahi karta — bas seedha dekhta hai:
+  // "screen band hai kya? agar haan, to uski video pause hai kya?" — agar
+  // nahi to turant pause kar deta hai. Isse "back karne ke baad bhi awaaz
+  // aana" wala bug — chahe jis wajah se ho — hamesha 300ms ke andar khud
+  // theek ho jaayega.
+  const reelsViewEl = document.getElementById('reelsView');
+  if (reelsViewEl && !reelsViewEl.classList.contains('open')) {
+    reelsViewEl.querySelectorAll('video').forEach(v => { if (!v.paused) { try { v.pause(); } catch(e){} } });
+  }
+  const detailModalEl = document.getElementById('detailModal');
+  if (detailModalEl && !detailModalEl.classList.contains('open')) {
+    detailModalEl.querySelectorAll('video').forEach(v => { if (!v.paused) { try { v.pause(); } catch(e){} } });
+  }
   const playingUnmuted = Array.from(document.querySelectorAll('video'))
     .filter(v => !v.paused && !v.muted && !v.ended);
   if (playingUnmuted.length > 1) {
