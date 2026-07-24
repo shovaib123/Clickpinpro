@@ -2453,8 +2453,25 @@ window.addEventListener('popstate', _handleBackNav);
 // stack hamesha sync rahe (chahe back-button se band karo ya X button se).
 // Yeh hash ko bhi wapas le jaata hai, jisse stack corrupt nahi hota.
 function goBack() {
+  // ✅ FIX (audio overlap, poori tarah se): humne kai jagah alag-alag pause
+  // fixes lagaye the (Reels ke andar, Detail ke andar, bottom-nav ke andar)
+  // lekin phir bhi kabhi-kabhi ek video ki awaaz reh jaati thi. Ab ek
+  // "universal safety net" laga rahe hain: DOCUMENT mein jitni bhi <video>
+  // tags hain — chahe wo grid mein ho, reels mein ho, ya detail view mein —
+  // sabko yahan se pause kar dete hain. Ye function har jagah se call hoga
+  // jahan bhi user ek video se doosri video/screen par jaata hai, taaki
+  // KABHI BHI koi purani video chhooti na reh jaaye.
+  _hardStopAllVideos();
   if (location.hash && location.hash !== '#home' && location.hash !== '') {
     history.back();
+  }
+}
+function _hardStopAllVideos() {
+  document.querySelectorAll('video').forEach(v => {
+    try { if (!v.paused) v.pause(); v.currentTime = 0; } catch(e) {}
+  });
+  if ('mediaSession' in navigator) {
+    try { navigator.mediaSession.playbackState = 'paused'; } catch(e) {}
   }
 }
 
@@ -2783,6 +2800,7 @@ function tgSave(e,id){e.stopPropagation();if(navigator.vibrate)navigator.vibrate
 
 // ─── DETAIL ───
 function openDetail(id){
+  _hardStopAllVideos();
   const p0=PIN_DATA.find(x=>x.id===id);if(!p0)return;
   // ✅ SMART ROUTING — type + duration ke hisaab se decide karo
   // (1) type==='reel' → hamesha scroll-feed (9:16 content)
@@ -3349,6 +3367,7 @@ async function deletePin(e, id) {
 }
 function openReels(e,startId){
   if(e&&e.stopPropagation)e.stopPropagation();
+  _hardStopAllVideos();
   // ✅ FIX: grid ke background videos ko pause kar do taaki wo fullscreen ke
   // peeche confuse na hon (isse hi wapas aane par blank thumbnail wala bug aata tha)
   if (typeof pauseAllGridVideos === 'function') pauseAllGridVideos();
@@ -3378,7 +3397,7 @@ function openReels(e,startId){
   const bn = document.querySelector('.bottom-nav');
   if (bn) bn.classList.add('force-hide');
 }
-function closeReels(){document.getElementById('reelsView').classList.remove('open');document.body.style.overflow='';// Stop all reels videos
+function closeReels(){_hardStopAllVideos();document.getElementById('reelsView').classList.remove('open');document.body.style.overflow='';// Stop all reels videos
   document.querySelectorAll('.rs-slide video, #reelsView video').forEach(v=>{v.pause();v.src='';v.load();});
   if ('mediaSession' in navigator) {
     navigator.mediaSession.playbackState = 'none';
@@ -6654,6 +6673,7 @@ function openCollageView(id) {
 
 
 function closeAllFullPages() {
+  _hardStopAllVideos();
   ['profilePage','inboxPage','settingsPage','boardsPage','boardDetailPage'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.remove('open');
@@ -7049,6 +7069,7 @@ window.addEventListener('pagehide', () => {
 // Detail modal close pe video band karo
 const _origCloseDetail = closeDetail;
 function closeDetail() {
+  _hardStopAllVideos();
   try {
     const dv = document.getElementById('detailVideo');
     if (dv) { dv.pause(); dv.src = ''; dv.load(); }
