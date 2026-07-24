@@ -3352,6 +3352,11 @@ function openReels(e,startId){
   // ✅ FIX: grid ke background videos ko pause kar do taaki wo fullscreen ke
   // peeche confuse na hon (isse hi wapas aane par blank thumbnail wala bug aata tha)
   if (typeof pauseAllGridVideos === 'function') pauseAllGridVideos();
+  // ✅ Defensive: agar single-video Detail view khuli/chalti reh gayi ho
+  // (kisi edge-case se, jaise bottom-nav se seedha yahan aana), use bhi
+  // pehle band karo — warna uski audio nayi reel ki audio ke saath mix ho jaati.
+  const detailModalEl = document.getElementById('detailModal');
+  if (detailModalEl && detailModalEl.classList.contains('open') && typeof closeDetail === 'function') closeDetail();
   pushHistory('reels');
   // ✅ Algorithm ke liye track karo — user ne is post ko fullscreen mein khola
   if (startId) {
@@ -6653,6 +6658,17 @@ function closeAllFullPages() {
     const el = document.getElementById(id);
     if (el) el.classList.remove('open');
   });
+  // ✅ FIX (audio overlap ka asli reason): pehle ye function Reels ya Detail
+  // (video) fullscreen view ko band hi nahi karta tha — sirf profile/inbox/
+  // settings jaise pages band karta tha. Isliye jab video chalte hue neeche
+  // ke Home/Explore/Inbox/Profile button dabate the, wo video bina ruke
+  // background mein bajti rehti thi. Agli 2-3 videos khulne par sab ek saath
+  // sunayi deti thi. Ab yahan bhi Reels aur Detail video ko explicitly
+  // pause + band karte hain.
+  const reelsViewEl = document.getElementById('reelsView');
+  if (reelsViewEl && reelsViewEl.classList.contains('open') && typeof closeReels === 'function') closeReels();
+  const detailModalEl = document.getElementById('detailModal');
+  if (detailModalEl && detailModalEl.classList.contains('open') && typeof closeDetail === 'function') closeDetail();
   // Ensure main app is visible
   const mainApp = document.getElementById('mainApp');
   if (mainApp) mainApp.style.display = 'block';
