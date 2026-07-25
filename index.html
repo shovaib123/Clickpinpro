@@ -2490,6 +2490,21 @@ function _hardStopAllVideos() {
 document.addEventListener('play', function(e){
   if (e.target && e.target.tagName === 'VIDEO') {
     e.target.dataset._playStartTs = String(Date.now());
+    // ✅ FIX (sabse bada gap tha ye): pehle "ek se zyada video ki awaaz mix
+    // hone" wala fix SIRF Reels ke andar (#reelsView) kaam karta tha. Agar
+    // koi lambi video (jo native controls ke saath khulti hai, "Detail" view)
+    // baar-baar khola jaaye, ye protection wahan lagta hi nahi tha!
+    // Ab ye poori WEBSITE ke liye kaam karta hai: jaise hi KOI BHI video
+    // "play" hoti hai, USI INSTANT (turant, delay ke bina) baaki SAARI videos
+    // — chahe Reels mein ho, Detail mein ho, ya grid mein ho — turant MUTE
+    // kar di jaati hain (mute pause se bhi zyada bharosemand hai, kyunki
+    // ismein koi decode/hardware delay nahi hota — awaaz turant band).
+    const justStarted = e.target;
+    document.querySelectorAll('video').forEach(v => {
+      if (v !== justStarted && !v.paused) {
+        try { v.muted = true; v.pause(); } catch(err) {}
+      }
+    });
   }
 }, true);
 // ✅ FIX (asli jad — Picture-in-Picture): Android Chrome kabhi-kabhi "controls"
