@@ -1618,7 +1618,7 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
   <div class="share-sheet">
     <div class="sheet-handle"></div>
     <img id="sharePreviewImg" class="sheet-preview" src="" alt="">
-    <video id="sharePreviewVid" class="sheet-preview-vid" muted loop playsinline></video>
+    <video id="sharePreviewVid" class="sheet-preview-vid" muted loop playsinline disablePictureInPicture disableRemotePlayback></video>
     <div class="sheet-title" id="shareTitle"></div>
     <div class="sheet-sub">Where do you want to share?</div>
     <div class="share-grid">
@@ -1702,7 +1702,7 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
       <div class="dz-sub" id="dzVideoLimit" style="margin-top:4px;color:var(--red);font-weight:600;display:none">⏱️ Max 5 minutes · 📦 Max 12MB</div>
     </div>
     <img id="uploadPreviewImg" class="upload-preview-img" src="" alt="">
-    <video id="uploadVideoPreview" class="upload-video-preview" controls playsinline></video>
+    <video id="uploadVideoPreview" class="upload-video-preview" controls playsinline disablePictureInPicture disableRemotePlayback></video>
     <div id="reelSuggestBanner" style="display:none;margin:-4px 0 12px;padding:11px 13px;background:linear-gradient(135deg,rgba(236,72,153,.10),rgba(168,85,247,.10));border:1.5px solid rgba(236,72,153,.35);border-radius:12px">
       <div style="font-size:12.5px;font-weight:600;color:var(--dark);line-height:1.5;margin-bottom:8px">💡 This video is under 1 minute! Short videos like this look much better in <b>Reel</b> format — full screen, with the swipe-feed.</div>
       <div style="display:flex;gap:8px">
@@ -2492,6 +2492,24 @@ document.addEventListener('play', function(e){
     e.target.dataset._playStartTs = String(Date.now());
   }
 }, true);
+// ✅ FIX (asli jad — Picture-in-Picture): Android Chrome kabhi-kabhi "controls"
+// wali lambi video ko khud hi ek chhoti floating window (Picture-in-Picture)
+// mein daal deta hai jab user "back" karta hai — taaki video chalti rahe.
+// Ye floating window humare app ke JS control se BAHAR hoti hai, isliye humare
+// saare pause() wale fixes bhi usko rok nahi paate the — yehi asli wajah thi
+// ki "back" karne ke baad bhi awaaz aati rehti thi. Ab humne saari videos par
+// disablePictureInPicture attribute laga diya hai (jo isko hone hi nahi dega),
+// aur yahan ek extra safety bhi: agar kisi tarah PiP shuru ho bhi jaaye, turant
+// usse bahar nikaal ke video ko pause kar do.
+document.addEventListener('enterpictureinpicture', function(e){
+  try {
+    const v = e.target;
+    if (document.pictureInPictureElement) {
+      document.exitPictureInPicture().catch(()=>{});
+    }
+    if (v && v.pause) v.pause();
+  } catch(err) {}
+}, true);
 setInterval(function(){
   // ✅ FIX (sabse zaroori): "back" chahe kisi bhi tarike se ho (apna X button,
   // phone ka back button/gesture, ya kuch aur) — agar Reels ya Detail (video)
@@ -2702,7 +2720,7 @@ function _realBuildGrid(list){
       const reelThumbId = `rthumb${p.id}`;
       media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">
         <img class="reel-thumb" id="${reelThumbId}" src="${thumbSrc}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:${thumbSrc?'block':'none'}" onerror="this.style.display='none';_retryThumbLoad(this)">
-        <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="${isReelBlob?'metadata':'none'}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0" ${isReelBlob?`onloadeddata="captureBlobThumb(this,document.getElementById('${reelThumbId}'),${p.id})"`:''}></video>
+        <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline disablePictureInPicture disableRemotePlayback preload="${isReelBlob?'metadata':'none'}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0" ${isReelBlob?`onloadeddata="captureBlobThumb(this,document.getElementById('${reelThumbId}'),${p.id})"`:''}></video>
         <div class="reel-badge">🎬 Reel</div>
         <div class="reel-dur">▶ ${_pinDurLabel(p)}</div>
         <div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div>
@@ -2728,7 +2746,7 @@ function _realBuildGrid(list){
       }
       const vidThumbId = `vthumb${p.id}`;
       media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)">
-        <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline preload="${isVidBlob?'metadata':'none'}" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0" ${isVidBlob?`onloadeddata="captureBlobThumb(this,document.getElementById('${vidThumbId}'),${p.id})"`:''}></video>
+        <video id="rv${p.id}" src="${vidSrc}" muted loop playsinline disablePictureInPicture disableRemotePlayback preload="${isVidBlob?'metadata':'none'}" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0" ${isVidBlob?`onloadeddata="captureBlobThumb(this,document.getElementById('${vidThumbId}'),${p.id})"`:''}></video>
         <img class="vid-thumb" id="${vidThumbId}" src="${vThumb}" style="height:${imgH}px;width:100%;object-fit:cover;display:${vThumb?'block':'none'}" alt="${p.title}" loading="lazy" onerror="this.style.display='none';_retryThumbLoad(this)">
         <div class="video-badge">🎥 Video</div>
         <div class="reel-dur">▶ ${_pinDurLabel(p)}</div>
@@ -2886,7 +2904,7 @@ function openDetail(id){
   const fullSrc = isB64src ? p.src : (p.src ? p.src.split('?')[0]+'?w=800&auto=format' : '');
 
   if((isReel||isVid) && p.vid){
-    mediaHtml=`<video id="detailVideo" src="${p.vid}" poster="${posterSrc}" controls autoplay playsinline preload="auto" style="width:100%;height:100%;object-fit:contain;display:block;background:#000;min-height:200px"></video>`;
+    mediaHtml=`<video id="detailVideo" src="${p.vid}" poster="${posterSrc}" controls autoplay playsinline disablePictureInPicture disableRemotePlayback preload="auto" style="width:100%;height:100%;object-fit:contain;display:block;background:#000;min-height:200px"></video>`;
   } else if(isReel){
     mediaHtml=`<img src="${posterSrc}" style="width:100%;height:100%;object-fit:contain;display:block" alt="${p.title}">`;
   } else {
@@ -3475,7 +3493,7 @@ function buildReelsView(reels, startId){
   sc.innerHTML=reels.map((p,i)=>`
     <div class="rs-slide" id="rss${p.id}">
       <div class="rs-bg" style="background-image:url('${p.src}&auto=format&w=50')"></div>
-      ${p.vid?`<video class="rs-video" id="rsv${p.id}" src="${p.vid}" poster="${p.src}&auto=format&fit=crop&w=507&h=900" loop playsinline preload="${i<2?'auto':'none'}" onclick="toggleReelPlay(${p.id})"></video>`
+      ${p.vid?`<video class="rs-video" id="rsv${p.id}" src="${p.vid}" poster="${p.src}&auto=format&fit=crop&w=507&h=900" loop playsinline disablePictureInPicture disableRemotePlayback preload="${i<2?'auto':'none'}" onclick="toggleReelPlay(${p.id})"></video>`
               :`<img class="rs-thumb" src="${p.src}&auto=format&fit=crop&w=507&h=900" loading="${i<3?'eager':'lazy'}">`}
       <div class="rs-ov"></div>
       <div class="rs-pause-ic"><span>⏸️</span></div>
@@ -4975,13 +4993,13 @@ const _lastPinObs = new IntersectionObserver(entries=>{
       const vs = p.vid || p.src || '';
       const rawT = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)/i)) ? p.src : vs;
       const ts = isB64s ? p.src : _thumb(rawT, 400, 711);
-      media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">${ts?`<img class="reel-thumb" src="${ts}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onerror="this.style.display='none';_retryThumbLoad(this)">`:''}<video id="rv${p.id}" src="${vs}" muted loop playsinline preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video><div class="reel-badge">🎬 Reel</div><div class="reel-dur">▶ ${_pinDurLabel(p)}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
+      media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">${ts?`<img class="reel-thumb" src="${ts}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onerror="this.style.display='none';_retryThumbLoad(this)">`:''}<video id="rv${p.id}" src="${vs}" muted loop playsinline disablePictureInPicture disableRemotePlayback preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video><div class="reel-badge">🎬 Reel</div><div class="reel-dur">▶ ${_pinDurLabel(p)}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
     } else if(p.type==='video'){
       const isB64s2 = p.src && p.src.startsWith('data:');
       const vs2 = p.vid || p.src;
       const rawT2 = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)/i)) ? p.src : vs2;
       const vt = isB64s2 ? p.src : _thumb(rawT2, 400, imgH);
-      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)"><video id="rv${p.id}" src="${vs2}" muted loop playsinline preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video>${vt?`<img class="vid-thumb" src="${vt}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none';_retryThumbLoad(this)">`:''}<div class="video-badge">🎥 Video</div><div class="reel-dur">▶ ${_pinDurLabel(p)}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
+      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)"><video id="rv${p.id}" src="${vs2}" muted loop playsinline disablePictureInPicture disableRemotePlayback preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video>${vt?`<img class="vid-thumb" src="${vt}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none';_retryThumbLoad(this)">`:''}<div class="video-badge">🎥 Video</div><div class="reel-dur">▶ ${_pinDurLabel(p)}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
     } else {
       const is = isB64s ? p.src : (p.src && p.src.includes('?') ? p.src+'&auto=format&fit=crop&h='+imgH : (p.src||'')+'?auto=format&fit=crop&h='+imgH);
       media=`<div class="pin-img-wrap"><img src="${is}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" loading="lazy" alt="${p.title}" onerror="this.style.background='#f0f0f0'"></div>`;
