@@ -8513,5 +8513,54 @@ document.addEventListener('keydown', e => {
   <button class="upload-pill-close" onclick="event.stopPropagation();hidePill()">✕</button>
 </div>
 
+<!-- ✅ TEMPORARY DEBUG PANEL — video audio bug track karne ke liye.
+     Ye sirf debugging ke liye hai, baad mein hata denge. Isse pata chalega
+     ki exactly kaun si video kab play/pause ho rahi hai. -->
+<div id="_vidDebugPanel" style="position:fixed;bottom:0;left:0;right:0;max-height:35vh;overflow-y:auto;background:rgba(0,0,0,.92);color:#0f0;font-family:monospace;font-size:11px;z-index:999999;padding:8px;display:none;line-height:1.5">
+  <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+    <b style="color:#fff">🐞 Video Debug Log</b>
+    <span>
+      <button onclick="document.getElementById('_vidDebugLog').innerHTML='';" style="background:#333;color:#fff;border:none;padding:4px 8px;border-radius:4px;margin-right:6px">Clear</button>
+      <button onclick="document.getElementById('_vidDebugPanel').style.display='none';" style="background:#900;color:#fff;border:none;padding:4px 8px;border-radius:4px">Hide</button>
+    </span>
+  </div>
+  <div id="_vidDebugLog"></div>
+</div>
+<button id="_vidDebugToggle" onclick="document.getElementById('_vidDebugPanel').style.display='block';" style="position:fixed;bottom:70px;right:10px;z-index:999999;background:#111;color:#0f0;border:1px solid #0f0;border-radius:20px;padding:6px 12px;font-size:11px;opacity:.85">🐞 Debug</button>
+<script>
+(function(){
+  function _vlog(msg){
+    const el = document.getElementById('_vidDebugLog');
+    if (!el) return;
+    const t = new Date();
+    const ts = t.getMinutes().toString().padStart(2,'0') + ':' + t.getSeconds().toString().padStart(2,'0') + '.' + t.getMilliseconds().toString().padStart(3,'0');
+    const line = document.createElement('div');
+    line.textContent = '[' + ts + '] ' + msg;
+    el.appendChild(line);
+    el.parentElement.scrollTop = el.parentElement.scrollHeight;
+  }
+  function _vidLabel(v){
+    if (!v) return '(none)';
+    let src = v.currentSrc || v.src || '';
+    src = src.split('/').pop().slice(0,25);
+    return (v.id || v.className || 'video') + ' [' + src + '] muted=' + v.muted;
+  }
+  document.addEventListener('play', function(e){
+    if (e.target && e.target.tagName === 'VIDEO') _vlog('▶️ PLAY  → ' + _vidLabel(e.target));
+  }, true);
+  document.addEventListener('pause', function(e){
+    if (e.target && e.target.tagName === 'VIDEO') _vlog('⏸️ PAUSE → ' + _vidLabel(e.target));
+  }, true);
+  document.addEventListener('volumechange', function(e){
+    if (e.target && e.target.tagName === 'VIDEO') _vlog('🔊 MUTE-CHANGE → ' + _vidLabel(e.target));
+  }, true);
+  setInterval(function(){
+    const playing = Array.from(document.querySelectorAll('video')).filter(v => !v.paused);
+    if (playing.length > 1) {
+      _vlog('⚠️ EK SE ZYADA VIDEO CHAL RAHI HAIN (' + playing.length + '): ' + playing.map(_vidLabel).join(' | '));
+    }
+  }, 500);
+})();
+</script>
 </body>
 </html>
