@@ -2901,6 +2901,7 @@ function openDetail(id){
   // ✅ FIX: grid ke background videos ko pause kar do taaki wo fullscreen ke
   // peeche confuse na hon (isse hi wapas aane par blank thumbnail wala bug aata tha)
   if (typeof pauseAllGridVideos === 'function') pauseAllGridVideos();
+  if (typeof _stopGridObserver === 'function') _stopGridObserver();
   // ✅ Defensive: agar reels view khuli reh gayi ho (kisi edge-case se), use bhi band karo
   const reelsViewEl = document.getElementById('reelsView');
   if (reelsViewEl && reelsViewEl.classList.contains('open')) closeReels();
@@ -3448,6 +3449,7 @@ function openReels(e,startId){
   // ✅ FIX: grid ke background videos ko pause kar do taaki wo fullscreen ke
   // peeche confuse na hon (isse hi wapas aane par blank thumbnail wala bug aata tha)
   if (typeof pauseAllGridVideos === 'function') pauseAllGridVideos();
+  if (typeof _stopGridObserver === 'function') _stopGridObserver();
   // ✅ Defensive: agar single-video Detail view khuli/chalti reh gayi ho
   // (kisi edge-case se, jaise bottom-nav se seedha yahan aana), use bhi
   // pehle band karo — warna uski audio nayi reel ki audio ke saath mix ho jaati.
@@ -5164,6 +5166,25 @@ function pauseAllGridVideos() {
     if (vid) { try { vid.pause(); } catch(e) {} vid.style.opacity = '0'; }
     if (thumb) thumb.style.opacity = '1';
     wrap.classList.remove('playing');
+  });
+}
+// ✅ FIX (asli jad — ye bug tha jo debug log se pakda gaya): jab Reels ya
+// Detail (video) fullscreen khulti thi, humne sirf ek baar grid ki videos ko
+// pause kiya tha (pauseAllGridVideos) — lekin grid ka apna IntersectionObserver
+// zinda rehta tha aur thodi der baad unhi videos ko FIR SE play kar deta tha
+// (kyunki wo technically viewport mein "dikh" rahi hoti hain, chahe fullscreen
+// overlay ke peeche chhupi hui hon). Ye background mein chalti rehti thi —
+// agar kabhi bhi koi grid video galti se "muted=false" ho jaaye, uski awaaz
+// bina kisi visible video ke hi sunayi degi (bilkul waisa jaisa report hua
+// tha — "pata nahi kaunsi video ki awaaz hai"). Ab overlay khulte hi grid ka
+// observer POORI TARAH ROOK diya jaata hai (unobserve), aur overlay band hone
+// par hi wapas chalu (resync) hota hai.
+function _stopGridObserver() {
+  document.querySelectorAll('.pin-video-wrap, .pin-reel-wrap').forEach(wrap => {
+    if (wrap.dataset.obs) {
+      try { videoObserver.unobserve(wrap); } catch(e) {}
+      wrap.dataset.obs = '';
+    }
   });
 }
 function resyncGridVideos() {
@@ -8545,21 +8566,35 @@ document.addEventListener('keydown', e => {
     src = src.split('/').pop().slice(0,25);
     return (v.id || v.className || 'video') + ' [' + src + '] muted=' + v.muted;
   }
+  // ✅ FIX: pehle grid ki (hamesha muted) chhoti thumbnail videos ka bhi har
+  // play/pause log mein aata tha — itni zyada entries aati thi ki asli
+  // (awaaz wali) video ka record turant upar scroll ho ke gayab ho jaata
+  // tha. Ab sirf zaroori cheezein log hongi: koi bhi video jo AWAAZ ke saath
+  // (muted=false) chal rahi ho, aur agar ek se zyada video ek saath chal
+  // rahi ho — grid ki routine muted activity ab log nahi hogi.
+  function _isRoutineGridNoise(v){
+    return v.muted === true && v.id && v.id.indexOf('rv') === 0 && v.id.indexOf('rsv') !== 0;
+  }
   document.addEventListener('play', function(e){
-    if (e.target && e.target.tagName === 'VIDEO') _vlog('▶️ PLAY  → ' + _vidLabel(e.target));
+    const v = e.target;
+    if (v && v.tagName === 'VIDEO' && !_isRoutineGridNoise(v)) _vlog('▶️ PLAY  → ' + _vidLabel(v));
   }, true);
   document.addEventListener('pause', function(e){
-    if (e.target && e.target.tagName === 'VIDEO') _vlog('⏸️ PAUSE → ' + _vidLabel(e.target));
+    const v = e.target;
+    if (v && v.tagName === 'VIDEO' && !_isRoutineGridNoise(v)) _vlog('⏸️ PAUSE → ' + _vidLabel(v));
   }, true);
   document.addEventListener('volumechange', function(e){
-    if (e.target && e.target.tagName === 'VIDEO') _vlog('🔊 MUTE-CHANGE → ' + _vidLabel(e.target));
+    const v = e.target;
+    if (v && v.tagName === 'VIDEO') _vlog('🔊 MUTE-CHANGE → ' + _vidLabel(v));
   }, true);
   setInterval(function(){
     const playing = Array.from(document.querySelectorAll('video')).filter(v => !v.paused);
-    if (playing.length > 1) {
-      _vlog('⚠️ EK SE ZYADA VIDEO CHAL RAHI HAIN (' + playing.length + '): ' + playing.map(_vidLabel).join(' | '));
+    const playingUnmuted = playing.filter(v => !v.muted);
+    if (playingUnmuted.length > 1) {
+      _vlog('⚠️⚠️⚠️ EK SE ZYADA VIDEO AWAAZ KE SAATH CHAL RAHI HAIN (' + playingUnmuted.length + '): ' + playingUnmuted.map(_vidLabel).join(' | '));
     }
   }, 500);
+
 })();
 </script>
 </body>
