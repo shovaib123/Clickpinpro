@@ -2467,11 +2467,40 @@ function goBack() {
   }
 }
 function _hardStopAllVideos() {
+  // ✅ FIX (asli jad — "sirf app band karne par hi awaaz rukti hai" wala bug):
+  // Sirf video.pause() karna kaafi nahi tha. Android/Chrome playing video ko
+  // background mein ek "Media Session" bana deta hai (bilkul music/podcast
+  // app jaisa) — aur agar sirf pause() karo, kabhi-kabhi ye background
+  // session zinda reh jaata hai, aur audio isi session se bajta rehta hai,
+  // JS ke pause() se bhi na ruke. Isko poori tarah rokne ke liye media
+  // RESOURCE ko hi khatam karna padta hai (sirf pause nahi) — taaki Android
+  // ko pata chale ki is video ka koi audio session ab hai hi nahi.
+  // ⚠️ NOTE: Grid (Home page) ki chhoti thumbnail videos ka src NAHI hataya
+  // jaata — unka src permanent rehna chahiye taaki wo dubara scroll par
+  // turant chal saken. Sirf Reels/Detail (bade, awaaz wali) videos ka
+  // resource poori tarah teardown hota hai.
   document.querySelectorAll('video').forEach(v => {
-    try { if (!v.paused) v.pause(); v.currentTime = 0; } catch(e) {}
+    const isGridVideo = v.closest('.pin-video-wrap, .pin-reel-wrap') !== null;
+    try {
+      if (!v.paused) v.pause();
+      v.muted = true;
+      v.currentTime = 0;
+      if (!isGridVideo) {
+        v.removeAttribute('src');
+        v.load();
+      }
+    } catch(e) {}
   });
   if ('mediaSession' in navigator) {
-    try { navigator.mediaSession.playbackState = 'paused'; } catch(e) {}
+    try {
+      navigator.mediaSession.playbackState = 'none';
+      navigator.mediaSession.metadata = null;
+      // Default action handlers hata do taaki OS ko lage koi bhi
+      // "resumable" media session hai hi nahi
+      ['play','pause','stop','seekbackward','seekforward','previoustrack','nexttrack'].forEach(action => {
+        try { navigator.mediaSession.setActionHandler(action, null); } catch(e2) {}
+      });
+    } catch(e) {}
   }
 }
 // ✅ FIX (asli, jad wala fix — fast swipe ke dauraan bhi): jab reel ek ke
@@ -2526,22 +2555,30 @@ document.addEventListener('enterpictureinpicture', function(e){
   } catch(err) {}
 }, true);
 setInterval(function(){
-  // ✅ FIX (sabse zaroori): "back" chahe kisi bhi tarike se ho (apna X button,
-  // phone ka back button/gesture, ya kuch aur) — agar Reels ya Detail (video)
-  // screen band ho chuki hai (uspe 'open' class nahi hai), to uske andar ki
-  // video KABHI bhi chalti hui nahi honi chahiye. Ye check control-flow
-  // (kis button se back hua) par depend nahi karta — bas seedha dekhta hai:
-  // "screen band hai kya? agar haan, to uski video pause hai kya?" — agar
-  // nahi to turant pause kar deta hai. Isse "back karne ke baad bhi awaaz
-  // aana" wala bug — chahe jis wajah se ho — hamesha 300ms ke andar khud
-  // theek ho jaayega.
+  // ✅ FIX (naya evidence-based fix): asli video-recording ke audio waveform
+  // se pata chala ki ek zor ka awaaz-spike Home grid dikhte waqt aata hai —
+  // matlab GRID ki chhoti thumbnail videos (jo hamesha muted honi chahiye)
+  // kabhi-kabhi kisi wajah se unmuted ho jaati hain. Ab in videos ko har
+  // 300ms mein zabardasti check karke, agar kabhi bhi muted=false ho jaayein,
+  // turant wapas muted=true kar diya jaata hai — chahe jo bhi wajah ho.
+  document.querySelectorAll('.pin-video-wrap video, .pin-reel-wrap video').forEach(v => {
+    if (v.muted !== true) { try { v.muted = true; v.pause(); } catch(e){} }
+  });
   const reelsViewEl = document.getElementById('reelsView');
   if (reelsViewEl && !reelsViewEl.classList.contains('open')) {
-    reelsViewEl.querySelectorAll('video').forEach(v => { if (!v.paused) { try { v.pause(); } catch(e){} } });
+    reelsViewEl.querySelectorAll('video').forEach(v => {
+      if (!v.paused || v.getAttribute('src')) {
+        try { v.pause(); v.muted = true; v.removeAttribute('src'); v.load(); } catch(e){}
+      }
+    });
   }
   const detailModalEl = document.getElementById('detailModal');
   if (detailModalEl && !detailModalEl.classList.contains('open')) {
-    detailModalEl.querySelectorAll('video').forEach(v => { if (!v.paused) { try { v.pause(); } catch(e){} } });
+    detailModalEl.querySelectorAll('video').forEach(v => {
+      if (!v.paused || v.getAttribute('src')) {
+        try { v.pause(); v.muted = true; v.removeAttribute('src'); v.load(); } catch(e){}
+      }
+    });
   }
   const playingUnmuted = Array.from(document.querySelectorAll('video'))
     .filter(v => !v.paused && !v.muted && !v.ended);
