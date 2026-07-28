@@ -2484,18 +2484,11 @@ function goBack() {
   }
 }
 function _hardStopAllVideos() {
-  // ✅ Halka/safe version: sirf pause + mute karo (jo bhi video chal rahi ho
-  // usko turant rok do). Pehle yahan video ka poora resource (src hata ke
-  // load()) bhi baar-baar todha jaata tha — lekin ye function HAR BAAR video
-  // khulte waqt chalta hai, aur itni baar resource todna-banana Chrome ko
-  // lagta hai ki site "kharab tareeke se" media chalati hai, jiski wajah se
-  // Chrome khud hi awaaz ke saath autoplay ki permission cheen leta hai
-  // (kuch der/hamesha ke liye). Poora resource-teardown ab sirf tab hota hai
-  // jab user sach mein Reels/Detail ko band karta hai (closeReels/closeDetail
-  // mein), na ki har chhote se video-switch par.
   document.querySelectorAll('video').forEach(v => {
     const isGridVideo = v.closest('.pin-video-wrap, .pin-reel-wrap') !== null;
     try {
+      // volume=0 is SYNCHRONOUS — audio cut happens instantly before any decode delay
+      v.volume = 0;
       if (!v.paused) v.pause();
       if (!isGridVideo) { v.muted = true; v.currentTime = 0; }
     } catch(e) {}
@@ -2949,7 +2942,7 @@ function openDetail(id){
   let mediaHtml='';
   // Stop any existing video
   const oldVid=document.querySelector('#detailMedia video');
-  if(oldVid){oldVid.pause();oldVid.src='';}
+  if(oldVid){oldVid.pause();oldVid.src='';oldVid.load();}
 
   const isB64src = p.src && p.src.startsWith('data:');
   const isB64vid = p.vid && p.vid.startsWith('data:');
@@ -2957,13 +2950,24 @@ function openDetail(id){
   const fullSrc = isB64src ? p.src : (p.src ? p.src.split('?')[0]+'?w=800&auto=format' : '');
 
   if((isReel||isVid) && p.vid){
-    mediaHtml=`<video id="detailVideo" src="${p.vid}" poster="${posterSrc}" controls autoplay playsinline disablePictureInPicture disableRemotePlayback preload="auto" style="width:100%;height:100%;object-fit:contain;display:block;background:#000;min-height:200px"></video>`;
+    mediaHtml=`<video id="detailVideo" src="${p.vid}" poster="${posterSrc}" controls playsinline disablePictureInPicture disableRemotePlayback preload="auto" style="width:100%;height:100%;object-fit:contain;display:block;background:#000;min-height:200px"></video>`;
   } else if(isReel){
     mediaHtml=`<img src="${posterSrc}" style="width:100%;height:100%;object-fit:contain;display:block" alt="${p.title}">`;
   } else {
     mediaHtml=`<img src="${fullSrc}" style="width:100%;height:100%;object-fit:contain;display:block;background:#f5f5f5;min-height:200px" alt="${p.title}">`;
   }
   document.getElementById('detailMedia').innerHTML=mediaHtml;
+  // Explicit play with restored volume — reliable on all Android Chrome versions
+  if((isReel||isVid) && p.vid){
+    setTimeout(() => {
+      const _dv = document.getElementById('detailVideo');
+      if(_dv && _dv.paused){
+        _dv.volume = 1;
+        _dv.muted = false;
+        _dv.play().catch(()=>{ /* controls shown — user can tap to play */ });
+      }
+    }, 80);
+  }
   document.getElementById('detailTitle').textContent=p.title;
   const descEl = document.getElementById('detailDesc');
   const descToggle = document.getElementById('detailDescToggle');
@@ -3320,7 +3324,7 @@ function openShareFor(e,id){
   document.getElementById('shareModal').classList.add('open');
   pushHistory('share');
 }
-function closeShare(){document.getElementById('shareModal').classList.remove('open');const v=document.getElementById('sharePreviewVid');v.pause();v.src='';}
+function closeShare(){document.getElementById('shareModal').classList.remove('open');const v=document.getElementById('sharePreviewVid');v.pause();v.src='';v.load();}
 
 function shareTo(pl){
   if(!sharePin) return;
@@ -3513,17 +3517,22 @@ function openReels(e,startId){
   const bn = document.querySelector('.bottom-nav');
   if (bn) bn.classList.add('force-hide');
 }
-function closeReels(){_hardStopAllVideos();document.getElementById('reelsView').classList.remove('open');document.body.style.overflow='';// Stop all reels videos
+function closeReels(){
+  // Disconnect reels observer FIRST so it can never re-trigger a play on closed reels
+  if (window._reelsObs) { try { window._reelsObs.disconnect(); } catch(e){} window._reelsObs = null; }
+  _hardStopAllVideos();
+  document.getElementById('reelsView').classList.remove('open');
+  document.body.style.overflow='';
   document.querySelectorAll('.rs-slide video, #reelsView video').forEach(v=>{v.pause();v.src='';v.load();});
+  // Remove reel DOM nodes entirely — no orphaned video elements remain in memory
+  const _rsc = document.getElementById('rsScroll');
+  if (_rsc) _rsc.innerHTML = '';
   if ('mediaSession' in navigator) {
     navigator.mediaSession.playbackState = 'none';
     try { navigator.mediaSession.metadata = null; } catch(e) {}
   }
-  // ✅ Bottom nav wapas dikhao
   const bn = document.querySelector('.bottom-nav');
   if (bn) bn.classList.remove('force-hide');
-  // ✅ FIX: grid par wapas aane ke baad thumbnail/video observer ko forcibly
-  // resync karo — taaki koi bhi card blank na reh jaaye (fix ke liye upar dekho)
   if (typeof resyncGridVideos === 'function') setTimeout(resyncGridVideos, 60);
 }
 // ✅ FIX: pehle sirf current video par muted/play set hota tha, lekin agar
@@ -3543,7 +3552,7 @@ function buildReelsView(reels, startId){
   // videos ko explicitly pause karo — sirf innerHTML badalne se kabhi-kabhi
   // audio thodi der background mein bajti reh jaati thi is se pehle ki naya
   // content aaye.
-  sc.querySelectorAll('.rs-video').forEach(v => { try { v.pause(); } catch(e){} });
+  sc.querySelectorAll('.rs-video').forEach(v => { try { v.pause(); v.src = ''; v.load(); } catch(e){} });
   sc.innerHTML=reels.map((p,i)=>`
     <div class="rs-slide" id="rss${p.id}">
       <div class="rs-bg" style="background-image:url('${p.src}&auto=format&w=50')"></div>
@@ -3584,23 +3593,20 @@ function buildReelsView(reels, startId){
       </div>
     </div>`).join('');
   refreshDeleteButtons();
-  // IntersectionObserver for autoplay — sound ke saath try karo (reels ka asli intent)
-  const obs=new IntersectionObserver(entries=>{entries.forEach(e=>{
+  // Disconnect any previous reels observer before creating a new one
+  if (window._reelsObs) { try { window._reelsObs.disconnect(); } catch(e){} window._reelsObs = null; }
+  // IntersectionObserver for autoplay — stored globally so closeReels() can disconnect it
+  window._reelsObs=new IntersectionObserver(entries=>{entries.forEach(e=>{
     const vid=e.target.querySelector('.rs-video');
     if(vid){
       if(e.isIntersecting){
-        // ✅ Pehle baaki sab video pause/mute karo, phir hi ye play karo
         _pauseAllOtherReelVideos(vid);
-        // ✅ Pehle unmute karke play try karo — agar browser block kare (rare,
-        // kyunki user ne already reels khol ke gesture diya hai), tab muted fallback
-        vid.muted = window._reelsMuted === true; // global mute-toggle state follow karo
+        vid.volume = 1;
+        vid.muted = window._reelsMuted === true;
         vid.play().catch(()=>{ vid.muted = true; vid.play().catch(()=>{}); });
-        // ✅ Har N reels swipe karne ke baad interstitial ad dikhao (jaise TikTok/Reels)
         _reelSwipeCount++;
         if (_reelSwipeCount % AD_CONFIG.interstitialEveryNReels === 0) _triggerAd('interstitial');
       } else {
-        // ✅ Watch-time track karo (video leave hone se PEHLE) — algorithm ke
-        // liye signal ki user ne is reel ko kitna dekha (poora ya beech mein chhod di)
         if (vid.currentTime > 0 && vid.duration > 0) {
           const postId = parseInt((vid.id || '').replace('rsv', ''), 10);
           if (!isNaN(postId)) trackWatchTime(postId, vid.currentTime, vid.duration);
@@ -3609,7 +3615,7 @@ function buildReelsView(reels, startId){
       }
     }
   });},{threshold:0.8});
-  sc.querySelectorAll('.rs-slide').forEach(s=>obs.observe(s));
+  sc.querySelectorAll('.rs-slide').forEach(s=>window._reelsObs.observe(s));
 
   // ✅ FIX: Pehle target slide ka pata scrollTop ko window.innerHeight se
   // divide karke (guess) lagaya jaata tha. Mobile browsers mein scroll ke
@@ -5225,6 +5231,8 @@ function _stopGridObserver() {
   });
 }
 function resyncGridVideos() {
+  // Don't re-trigger observers if page is hidden — would start videos in background
+  if (document.hidden) return;
   document.querySelectorAll('.pin-video-wrap, .pin-reel-wrap').forEach(wrap => {
     if (wrap.dataset.obs) {
       videoObserver.unobserve(wrap);
@@ -7167,12 +7175,9 @@ function checkAdultContent(title, desc, filename) {
 // ✅ VIDEO BACKGROUND STOP — notification mein play na ho
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
-    // ✅ Agar yeh humare apne history navigation (_handleBackNav) ki wajah se
-    // trigger hua hai, toh video pause mat karo — yeh sirf hash-change ka
-    // side-effect hai, asal mein app background mein nahi gayi.
-    if (_backNavHandling) return;
-    // Page background mein gayi — sab videos pause karo
+    // Page background mein gayi — sab videos band karo (always, no exceptions)
     document.querySelectorAll('video').forEach(v => {
+      try { v.volume = 0; } catch(e) {}
       if (!v.paused) {
         v.pause();
         v.dataset.wasPlaying = '1';
@@ -7193,7 +7198,7 @@ document.addEventListener('visibilitychange', () => {
 // fire hota hai — isliye ek fallback yahan bhi laga rahe hain taaki audio
 // kabhi bhi background mein na reh jaaye.
 window.addEventListener('pagehide', () => {
-  document.querySelectorAll('video').forEach(v => { if (!v.paused) { try { v.pause(); } catch(e){} } });
+  document.querySelectorAll('video').forEach(v => { try { v.volume = 0; v.pause(); } catch(e){} });
 });
 
 // ✅ Reels close cleanup ab upar wale asli closeReels() function mein hi
@@ -7201,25 +7206,22 @@ window.addEventListener('pagehide', () => {
 // tha jo JS hoisting ki wajah se khud ko hi infinitely call kar raha tha —
 // yehi wajah thi ki reel band hi nahi hoti thi aur back button "atak" jaata tha).
 
-// Detail modal close pe video band karo
-const _origCloseDetail = closeDetail;
 function closeDetail() {
   _hardStopAllVideos();
   try {
     const dv = document.getElementById('detailVideo');
     if (dv) { dv.pause(); dv.src = ''; dv.load(); }
-    // Stop all videos in detail
-    document.querySelectorAll('#detailModal video').forEach(v => { v.pause(); v.src = ''; });
+    document.querySelectorAll('#detailModal video').forEach(v => { v.pause(); v.src = ''; v.load(); });
+    // Remove video element from DOM entirely — browser fully releases audio resources
+    const dm = document.getElementById('detailMedia');
+    if (dm) dm.innerHTML = '';
     if ('mediaSession' in navigator) {
       navigator.mediaSession.playbackState = 'none';
       try { navigator.mediaSession.metadata = null; } catch(e) {}
     }
   } catch(e) {}
-  // Force close the modal
   const modal = document.getElementById('detailModal');
   if (modal) modal.classList.remove('open');
-  // ✅ FIX: grid par wapas aane ke baad thumbnail/video observer ko forcibly
-  // resync karo — taaki koi bhi card blank na reh jaaye
   if (typeof resyncGridVideos === 'function') setTimeout(resyncGridVideos, 60);
 }
 
@@ -7514,7 +7516,7 @@ try {
   </div>
   <div class="inbox-tabs">
     <button class="inbox-tab active" id="itab-notif" onclick="switchInboxTab('notif',this)">🔔 Updates</button>
-    <button class="inbox-tab" id="itab-msgs" onclick="switchInboxTab('msgs',this)">💬 Messages</button>
+    <button class="inbox-tab" id="itab-msgs" onclick="switchInboxTab('msgs',this)">?? Messages</button>
     <button class="inbox-tab" id="itab-req" onclick="switchInboxTab('req',this)">👥 Requests</button>
   </div>
   <div class="inbox-content" id="inboxContent"></div>
