@@ -2403,6 +2403,23 @@ try {
 // bachti hi nahi thi. Ab is flag se apna khud ka navigation event ignore
 // karte hain, sirf genuine user back-press hi process hoti hai.
 let _isOwnNav = false;
+// ✅ FIX (naya bug — "back karne par poori app se bahar nikal jaana"):
+// Kabhi-kabhi page load hote hi URL mein pehle se hi '#reels' jaisa hash
+// laga hota tha (purane reload/cache se), ya phir koi bhi "#home" baseline
+// history entry set hi nahi hota tha. Aisi soorat mein jab Reels khulti thi,
+// pushHistory() ko lagta tha hash pehle se wahi hai (koi badlaav nahi), aur
+// wo koi nayi history entry banata hi nahi tha — is se "back" karne par
+// seedha app se bahar (ya kisi purani, bahar ki site par) chala jaata tha,
+// kyunki app ke andar wapas jaane layak koi entry hi nahi thi.
+// Ab page load hote hi hamesha ek pakka, saaf "#home" baseline entry
+// zabardasti set kar dete hain — taaki har baar Reels/Detail jaisi gehri
+// screen khulne par ek asli, nayi history entry bane, aur "back" hamesha
+// pehle app ke Home par hi le jaaye, seedha bahar nahi.
+try {
+  if (location.hash !== '#home') {
+    history.replaceState({ s: 'home' }, '', location.pathname + location.search + '#home');
+  }
+} catch(e) {}
 function pushHistory(state) {
   try {
     if (location.hash !== '#' + state) {
