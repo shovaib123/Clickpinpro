@@ -2580,7 +2580,7 @@ setInterval(function(){
     // sirf sabse nayi (index 0) ko chalne do, baaki sab purani pause kar do
     playingUnmuted.slice(1).forEach(v => { try { v.pause(); } catch(e){} });
   }
-}, 300);
+}, 1000);
 
 // ─── CATEGORIES ───
 function buildCatBar(){
@@ -7516,7 +7516,7 @@ try {
   </div>
   <div class="inbox-tabs">
     <button class="inbox-tab active" id="itab-notif" onclick="switchInboxTab('notif',this)">🔔 Updates</button>
-    <button class="inbox-tab" id="itab-msgs" onclick="switchInboxTab('msgs',this)">?? Messages</button>
+    <button class="inbox-tab" id="itab-msgs" onclick="switchInboxTab('msgs',this)">💬 Messages</button>
     <button class="inbox-tab" id="itab-req" onclick="switchInboxTab('req',this)">👥 Requests</button>
   </div>
   <div class="inbox-content" id="inboxContent"></div>
@@ -7880,10 +7880,59 @@ function initFirebase() {
   fbAuth = firebase.auth();
 
   // ✅ PAGE LOAD: Dummy data turant render karo, Firestore bhi turant load karo
-  // (no artificial delay — dono ek saath jaldi dikhne chahiye)
   applyFilters(); // Turant dummy posts dikha do
   loadAllPostsFromFirestore(); // Turant uploaded posts bhi load karo
   _triggerAd('banner'); // ✅ App khulte hi bottom banner ad dikhao (persistent)
+
+  // ✅ REAL-TIME SYNC — jab bhi koi bhi user (kisi bhi phone se) naya post
+  // kare, sabke phones pe turant dikh jaaye — bina refresh kiye (jaise YouTube)
+  if (window._firestoreUnsub) { try { window._firestoreUnsub(); } catch(e){} }
+  window._firestoreUnsub = db.collection('posts')
+    .orderBy('createdAt', 'desc')
+    .limit(50)
+    .onSnapshot(snapshot => {
+      let changed = false;
+      snapshot.docChanges().forEach(change => {
+        if (change.type !== 'added') return;
+        const doc = change.doc;
+        const raw = doc.data();
+        // Already in feed? Skip.
+        if (PIN_DATA.some(p => p.firestoreId === doc.id)) return;
+        const srcUrl = raw.src || raw.vid || '';
+        if (!srcUrl || srcUrl.startsWith('data:') || srcUrl.startsWith('blob:')) return;
+        if (typeof checkAdultContent === 'function') {
+          const ac = checkAdultContent(raw.title || '', raw.desc || '', '');
+          if (ac.blocked) return;
+        }
+        let postTimeMs = Date.now();
+        if (raw.createdAt) {
+          if (typeof raw.createdAt === 'string') { const p = new Date(raw.createdAt).getTime(); if (!isNaN(p)) postTimeMs = p; }
+          else if (raw.createdAt.toMillis) postTimeMs = raw.createdAt.toMillis();
+          else if (raw.createdAt.seconds) postTimeMs = raw.createdAt.seconds * 1000;
+        }
+        const av = raw.userAvatar || '';
+        PIN_DATA.unshift({
+          id             : raw.id || (Date.now() + Math.random()),
+          firestoreId    : doc.id,
+          firestoreUserId: raw.userId || '',
+          type           : raw.type || (raw.vid ? 'video' : 'image'),
+          src            : raw.src || raw.vid || '',
+          vid            : raw.vid || null,
+          title          : raw.title || 'Post',
+          desc           : raw.desc || '',
+          cat            : raw.cat || 'Home',
+          likes          : raw.likes || 0,
+          _postTime      : postTimeMs,
+          user: {
+            name     : raw.userName || 'Showfy User',
+            avatar   : (av && (av.startsWith('http') || av.startsWith('data:'))) ? av : 'https://i.pravatar.cc/60?img=1',
+            followers: '0'
+          }
+        });
+        changed = true;
+      });
+      if (changed) applyFilters();
+    }, err => { console.log('Realtime listener error (will retry on next load):', err.message); });
 
   // Auth state listener — jab bhi login/logout ho
   fbAuth.onAuthStateChanged(async (user) => {
@@ -8573,68 +8622,5 @@ document.addEventListener('keydown', e => {
   <button class="upload-pill-close" onclick="event.stopPropagation();hidePill()">✕</button>
 </div>
 
-<!-- ✅ TEMPORARY DEBUG PANEL — video audio bug track karne ke liye.
-     Ye sirf debugging ke liye hai, baad mein hata denge. Isse pata chalega
-     ki exactly kaun si video kab play/pause ho rahi hai. -->
-<div id="_vidDebugPanel" style="position:fixed;bottom:0;left:0;right:0;max-height:35vh;overflow-y:auto;background:rgba(0,0,0,.92);color:#0f0;font-family:monospace;font-size:11px;z-index:999999;padding:8px;display:none;line-height:1.5">
-  <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-    <b style="color:#fff">🐞 Video Debug Log</b>
-    <span>
-      <button onclick="document.getElementById('_vidDebugLog').innerHTML='';" style="background:#333;color:#fff;border:none;padding:4px 8px;border-radius:4px;margin-right:6px">Clear</button>
-      <button onclick="document.getElementById('_vidDebugPanel').style.display='none';" style="background:#900;color:#fff;border:none;padding:4px 8px;border-radius:4px">Hide</button>
-    </span>
-  </div>
-  <div id="_vidDebugLog"></div>
-</div>
-<button id="_vidDebugToggle" onclick="document.getElementById('_vidDebugPanel').style.display='block';" style="position:fixed;bottom:70px;right:10px;z-index:999999;background:#111;color:#0f0;border:1px solid #0f0;border-radius:20px;padding:6px 12px;font-size:11px;opacity:.85">🐞 Debug</button>
-<script>
-(function(){
-  function _vlog(msg){
-    const el = document.getElementById('_vidDebugLog');
-    if (!el) return;
-    const t = new Date();
-    const ts = t.getMinutes().toString().padStart(2,'0') + ':' + t.getSeconds().toString().padStart(2,'0') + '.' + t.getMilliseconds().toString().padStart(3,'0');
-    const line = document.createElement('div');
-    line.textContent = '[' + ts + '] ' + msg;
-    el.appendChild(line);
-    el.parentElement.scrollTop = el.parentElement.scrollHeight;
-  }
-  function _vidLabel(v){
-    if (!v) return '(none)';
-    let src = v.currentSrc || v.src || '';
-    src = src.split('/').pop().slice(0,25);
-    return (v.id || v.className || 'video') + ' [' + src + '] muted=' + v.muted;
-  }
-  // ✅ FIX: pehle grid ki (hamesha muted) chhoti thumbnail videos ka bhi har
-  // play/pause log mein aata tha — itni zyada entries aati thi ki asli
-  // (awaaz wali) video ka record turant upar scroll ho ke gayab ho jaata
-  // tha. Ab sirf zaroori cheezein log hongi: koi bhi video jo AWAAZ ke saath
-  // (muted=false) chal rahi ho, aur agar ek se zyada video ek saath chal
-  // rahi ho — grid ki routine muted activity ab log nahi hogi.
-  function _isRoutineGridNoise(v){
-    return v.muted === true && v.id && v.id.indexOf('rv') === 0 && v.id.indexOf('rsv') !== 0;
-  }
-  document.addEventListener('play', function(e){
-    const v = e.target;
-    if (v && v.tagName === 'VIDEO' && !_isRoutineGridNoise(v)) _vlog('▶️ PLAY  → ' + _vidLabel(v));
-  }, true);
-  document.addEventListener('pause', function(e){
-    const v = e.target;
-    if (v && v.tagName === 'VIDEO' && !_isRoutineGridNoise(v)) _vlog('⏸️ PAUSE → ' + _vidLabel(v));
-  }, true);
-  document.addEventListener('volumechange', function(e){
-    const v = e.target;
-    if (v && v.tagName === 'VIDEO') _vlog('🔊 MUTE-CHANGE → ' + _vidLabel(v));
-  }, true);
-  setInterval(function(){
-    const playing = Array.from(document.querySelectorAll('video')).filter(v => !v.paused);
-    const playingUnmuted = playing.filter(v => !v.muted);
-    if (playingUnmuted.length > 1) {
-      _vlog('⚠️⚠️⚠️ EK SE ZYADA VIDEO AWAAZ KE SAATH CHAL RAHI HAIN (' + playingUnmuted.length + '): ' + playingUnmuted.map(_vidLabel).join(' | '));
-    }
-  }, 500);
-
-})();
-</script>
-</body>
+<script src="https://replit-cdn.com/replit-pill/replit-pill.global.js" data-repl-id="a0308886-ba8d-4fcf-9d27-5124007c8f82"></script></body>
 </html>
