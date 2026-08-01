@@ -2619,6 +2619,18 @@ function _retryThumbLoad(imgEl, attempt){
   }, delay);
 }
 
+// ✅ FIX: pehle reel khulte hi kaale screen dikhti thi jab tak video load na
+// ho jaaye — kyunki poster/background thumbnail image ka URL banate waqt
+// hamesha "&" laga diya jaata tha (jaise URL mein pehle se "?" ho, jo demo
+// Unsplash images mein hota hai) — lekin khud upload ki hui photos/videos ke
+// URL mein "?" nahi hota, isliye poster image hi load nahi hoti thi (broken
+// URL), aur jab tak asli video buffer na ho, kaala screen dikhta tha. Ab ye
+// helper check karta hai URL mein pehle se "?" hai ya nahi, aur sahi se "?"
+// ya "&" lagata hai.
+function _safeImgParams(url, params) {
+  if (!url) return url;
+  return url + (url.includes('?') ? '&' : '?') + params;
+}
 function _pinDurLabel(p){
   if (typeof p._duration === 'number' && p._duration > 0) {
     const totalSec = Math.floor(p._duration);
@@ -3572,9 +3584,9 @@ function buildReelsView(reels, startId){
   sc.querySelectorAll('.rs-video').forEach(v => { try { v.pause(); v.src = ''; v.load(); } catch(e){} });
   sc.innerHTML=reels.map((p,i)=>`
     <div class="rs-slide" id="rss${p.id}">
-      <div class="rs-bg" style="background-image:url('${p.src}&auto=format&w=50')"></div>
-      ${p.vid?`<video class="rs-video" id="rsv${p.id}" src="${p.vid}" poster="${p.src}&auto=format&fit=crop&w=507&h=900" loop playsinline disablePictureInPicture disableRemotePlayback preload="${i<2?'auto':'none'}" onclick="toggleReelPlay(${p.id})"></video>`
-              :`<img class="rs-thumb" src="${p.src}&auto=format&fit=crop&w=507&h=900" loading="${i<3?'eager':'lazy'}">`}
+      <div class="rs-bg" style="background-image:url('${_safeImgParams(p.src, 'auto=format&w=50')}')"></div>
+      ${p.vid?`<video class="rs-video" id="rsv${p.id}" src="${p.vid}" poster="${_safeImgParams(p.src, 'auto=format&fit=crop&w=507&h=900')}" loop playsinline disablePictureInPicture disableRemotePlayback preload="${i<2?'auto':'none'}" onclick="toggleReelPlay(${p.id})"></video>`
+              :`<img class="rs-thumb" src="${_safeImgParams(p.src, 'auto=format&fit=crop&w=507&h=900')}" loading="${i<3?'eager':'lazy'}">`}
       <div class="rs-ov"></div>
       <div class="rs-pause-ic"><span>⏸️</span></div>
       <div class="rs-top">
@@ -4463,7 +4475,8 @@ async function submitPin(){
           // se) taaki pata chale Bunny upload exactly kyun fail ho raha hai —
           // bina computer/DevTools ke. Jab issue pakad mein aa jaaye, ye hata
           // denge.
-          toast('⚠️ Bunny error: ' + (bunnyErr.message || 'unknown').slice(0, 150));
+          toast('⚠️ Bunny error dekho niche');
+          alert('BUNNY UPLOAD ERROR:\n\n' + (bunnyErr.message || 'unknown error'));
           updateUploadPill('📤 Uploading video (fallback)...', 10);
           const bunnyResult = await uploadToBunny(fileToUpload);
           updateUploadPill('⚙️ Saving...', 80);
