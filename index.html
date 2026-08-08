@@ -3499,6 +3499,7 @@ async function deletePin(e, id) {
 function openReels(e,startId){
   if(e&&e.stopPropagation)e.stopPropagation();
   _hardStopAllVideos();
+  window._reelsAutoMuteNotified = false; // ✅ har naye reels session mein ek baar hint dikhane ke liye reset
   // ✅ FIX: grid ke background videos ko pause kar do taaki wo fullscreen ke
   // peeche confuse na hon (isse hi wapas aane par blank thumbnail wala bug aata tha)
   if (typeof pauseAllGridVideos === 'function') pauseAllGridVideos();
@@ -3645,6 +3646,11 @@ function buildReelsView(reels, startId){
           // (🔇 dikhayenge) — taaki ek hi tap mein sahi se unmute ho jaaye.
           window._reelsMuted = true;
           document.querySelectorAll('[id^="muteBtn"] .rs-act-ic').forEach(ic => { ic.textContent = '🔇'; });
+          // ✅ NEW (safe, additive-only): ek hi baar batao ki sound kyun band hai
+          if (!window._reelsAutoMuteNotified) {
+            window._reelsAutoMuteNotified = true;
+            toast('🔊 Sound ke liye speaker icon dabao');
+          }
         });
         _reelSwipeCount++;
         if (_reelSwipeCount % AD_CONFIG.interstitialEveryNReels === 0) _triggerAd('interstitial');
@@ -3678,6 +3684,10 @@ function buildReelsView(reels, startId){
       fv.play().catch(()=>{});
       window._reelsMuted = true;
       document.querySelectorAll('[id^="muteBtn"] .rs-act-ic').forEach(ic => { ic.textContent = '🔇'; });
+      if (!window._reelsAutoMuteNotified) {
+        window._reelsAutoMuteNotified = true;
+        toast('🔊 Sound ke liye speaker icon dabao');
+      }
     });}
   },400);
 }
@@ -4224,9 +4234,20 @@ async function uploadVideoToBunnyStream(file, title, onProgress) {
 // hote hain — Vercel function sirf ek chhoti "permission slip" (presigned URL)
 // banata hai, asli file browser se seedha R2 ko jaati hai. Isse Vercel ke
 // body-size limit (~4.5MB) ka koi issue nahi aata, chahe video jitna bhi bada ho.
+// ── data: URL ko Blob mein convert karo (thumbnail ko R2 pe upload karne ke liye) ──
+function dataUrlToBlob(dataUrl) {
+  const [header, base64] = dataUrl.split(',');
+  const mimeMatch = header.match(/:(.*?);/);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+  const binary = atob(base64);
+  const array = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) array[i] = binary.charCodeAt(i);
+  return new Blob([array], { type: mime });
+}
+
 async function uploadToR2(file) {
   const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-  toast('📤 Uploading to Cloudflare... ' + sizeMB + 'MB');
+  console.log('Uploading to Cloudflare... ' + sizeMB + 'MB');
 
   const filename = file.name || ('file-' + Date.now());
   const contentType = file.type || 'application/octet-stream';
@@ -4312,7 +4333,7 @@ async function uploadToBunny(file) {
 
   let uploadFile = file;
   if (!isVideo) {
-    toast('🔄 Compressing image...');
+    updateUploadPill('🔄 Compressing image...', 8);
     uploadFile = await compressImage(file);
   }
 
@@ -4462,24 +4483,41 @@ async function submitPin(){
         const bunnyResult = await uploadToBunny(fileToUpload);
         updateUploadPill('⚙️ Saving...', 80);
         finalVid = bunnyResult.url;
-        if (customThumbDataUrl) {
-          finalSrc = customThumbDataUrl;
-        } else {
+
+        // ✅ FIX: Thumbnail ko bhi R2 pe upload karo taaki asli URL mile —
+        // pehle base64 (data:) URL seedha use hota tha, jo Firestore save
+        // logic jaan-boojh kar skip kar deta hai (bade blobs avoid karne ke
+        // liye). Isse thumbnail refresh ke baad ghayab ho jaata tha aur
+        // pura post bhi disappear ho jaata tha. Ab thumbnail bhi R2 pe
+        // upload hoke ek permanent URL leta hai — Firestore mein sahi save hoga.
+        let thumbDataUrl = customThumbDataUrl;
+        if (!thumbDataUrl) {
           try {
-            finalSrc = await captureVideoThumbnail(fileToUpload);
+            thumbDataUrl = await captureVideoThumbnail(fileToUpload);
           } catch (thumbErr) {
             console.log('Thumbnail capture failed:', thumbErr.message);
-            finalSrc = '';
+            thumbDataUrl = '';
           }
         }
-        toast('✅ Uploaded successfully!');
+        if (thumbDataUrl) {
+          try {
+            const thumbBlob = dataUrlToBlob(thumbDataUrl);
+            const thumbFile = new File([thumbBlob], 'thumb-' + Date.now() + '.jpg', { type: 'image/jpeg' });
+            const thumbUpload = await uploadToR2(thumbFile);
+            finalSrc = thumbUpload.url;
+          } catch (thumbUpErr) {
+            console.log('Thumbnail upload failed, using local preview only:', thumbUpErr.message);
+            finalSrc = thumbDataUrl; // is device pe dikhega, refresh ke baad shayad nahi (fallback)
+          }
+        } else {
+          finalSrc = '';
+        }
       } else {
         const bunnyResult = await uploadToBunny(fileToUpload);
         updateUploadPill('⚙️ Saving...', 80);
         // Image: data URL (instant, no network delay)
         finalSrc = bunnyResult.url;
         finalVid = null;
-        toast('✅ Uploaded successfully!');
       }
     } catch(err) {
       if (pubBtn) { pubBtn.disabled = false; pubBtn.textContent = '🚀 Publish'; }
@@ -4523,12 +4561,11 @@ async function submitPin(){
   upData = null;
   closeUpload();
   updateUploadPill('✅ ' + np.title + ' — Uploaded!', 100);
-  setTimeout(() => hidePill(), 4000);
+  setTimeout(() => hidePill(), 2500);
   applyFilters();
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (pubBtn) { pubBtn.disabled = false; pubBtn.textContent = '🚀 Publish'; }
   if (AD_CONFIG.showInterstitialAfterPublish) _triggerAd('interstitial');
-  toast('🎉 Post publish ho gayi! ✅');
 
   // ✅ FIRESTORE SAVE — background mein karo (non-blocking)
   // Local file pe bhi try karo — agar Firestore SDK load hua hai aur network hai, save hoga
