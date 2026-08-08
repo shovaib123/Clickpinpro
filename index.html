@@ -4248,6 +4248,44 @@ async function uploadToR2(file) {
   return { url: data.url, isVideo: (file.type || '').startsWith('video') };
 }
 
+// ── Video ka pehla frame capture karke thumbnail banao (client-side) ──
+// R2 raw storage hai, Cloudinary/Bunny ki tarah auto-thumbnail nahi banata,
+// isliye khud video se ek frame nikaal kar JPEG thumbnail generate karte hain.
+function captureVideoThumbnail(file) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.muted = true;
+    video.playsInline = true;
+    const objectUrl = URL.createObjectURL(file);
+    const cleanup = () => { try { URL.revokeObjectURL(objectUrl); } catch(e){} };
+    const timeout = setTimeout(() => { cleanup(); reject(new Error('thumbnail timeout')); }, 8000);
+
+    video.onloadedmetadata = () => {
+      video.currentTime = Math.min(0.3, (video.duration || 1) / 2);
+    };
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 400;
+        canvas.height = video.videoHeight || 711;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        clearTimeout(timeout);
+        cleanup();
+        resolve(dataUrl);
+      } catch (e) {
+        clearTimeout(timeout);
+        cleanup();
+        reject(e);
+      }
+    };
+    video.onerror = () => { clearTimeout(timeout); cleanup(); reject(new Error('video load error')); };
+    video.src = objectUrl;
+  });
+}
+
 async function uploadToBunny(file) {
   const ext = (file.name || '').split('.').pop().toLowerCase();
   const isVideo = file.type.startsWith('video') ||
@@ -4400,51 +4438,22 @@ async function submitPin(){
 
     try {
       if (isVidFile) {
-        // ✅ Videos/Reels ke liye pehle Bunny Stream try karo (asli video hosting,
-        // bahut sasta). Agar kisi wajah se fail ho (CORS, network, timeout),
-        // to bina user ko pareshan kiye Cloudinary pe fallback ho jaayega.
-        try {
-          // ✅ SAFETY NET: chahe uploadVideoToBunnyStream ke andar kuch bhi
-          // ajeeb ho jaaye (koi unexpected hang), 60 second ke baad HAMESHA
-          // fallback ho jaayega — user kabhi bhi hamesha ke liye "Processing..."
-          // pe fasa nahi rahega.
-          const hardTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Bunny upload safety-timeout (60s) — falling back')), 60000));
-          const bunnyStream = await Promise.race([
-            uploadVideoToBunnyStream(fileToUpload, title, (pct) => {
-              updateUploadPill(pct < 20 ? '📤 Uploading video...' : '⚙️ Processing video... ' + Math.min(pct,90) + '%', Math.min(10 + pct*0.7, 85));
-            }),
-            hardTimeout
-          ]);
-          finalVid = bunnyStream.playUrl;
-          finalSrc = customThumbDataUrl || bunnyStream.thumbUrl;
-          updateUploadPill('⚙️ Saving...', 90);
-          toast('✅ Uploaded successfully!');
-        } catch (bunnyErr) {
-          console.log('Bunny Stream failed, falling back to Cloudinary:', bunnyErr.message);
-          // ✅ TEMPORARY DIAGNOSTIC: asli error message screen par dikhao (toast
-          // se) taaki pata chale Bunny upload exactly kyun fail ho raha hai —
-          // bina computer/DevTools ke. Jab issue pakad mein aa jaaye, ye hata
-          // denge.
-          toast('⚠️ Bunny error dekho niche');
-          alert('BUNNY UPLOAD ERROR:\n\n' + (bunnyErr.message || 'unknown error'));
-          updateUploadPill('📤 Uploading video (fallback)...', 10);
-          const bunnyResult = await uploadToBunny(fileToUpload);
-          updateUploadPill('⚙️ Saving...', 80);
-          finalVid = bunnyResult.url;
-          if (customThumbDataUrl) {
-            finalSrc = customThumbDataUrl;
-          } else if (bunnyResult.url && bunnyResult.url.includes('res.cloudinary.com')) {
-            const parts = bunnyResult.url.split('/upload/');
-            if (parts.length === 2) {
-              finalSrc = parts[0] + '/upload/so_0,w_400,h_711,c_fill,q_auto,f_jpg/' + parts[1].replace(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)(\?.*)?$/i, '.jpg');
-            } else {
-              finalSrc = '';
-            }
-          } else {
+        // ✅ Videos ab seedha Cloudflare R2 pe upload hote hain (fast, direct)
+        updateUploadPill('📤 Uploading video...', 20);
+        const bunnyResult = await uploadToBunny(fileToUpload);
+        updateUploadPill('⚙️ Saving...', 80);
+        finalVid = bunnyResult.url;
+        if (customThumbDataUrl) {
+          finalSrc = customThumbDataUrl;
+        } else {
+          try {
+            finalSrc = await captureVideoThumbnail(fileToUpload);
+          } catch (thumbErr) {
+            console.log('Thumbnail capture failed:', thumbErr.message);
             finalSrc = '';
           }
-          toast('✅ Uploaded successfully!');
         }
+        toast('✅ Uploaded successfully!');
       } else {
         const bunnyResult = await uploadToBunny(fileToUpload);
         updateUploadPill('⚙️ Saving...', 80);
