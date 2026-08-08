@@ -4219,33 +4219,52 @@ async function uploadVideoToBunnyStream(file, title, onProgress) {
   throw new Error('Bunny processing did not finish within 35 seconds (timeout)');
 }
 
-// ── CLOUDFLARE R2 UPLOAD (via secure Vercel serverless proxy) ──
-// ✅ FIX: Ab image/video Cloudflare R2 (bucket: "showfy") mein upload hote hain.
-// Secret keys kabhi bhi browser mein nahi aatin — sirf server-side proxy
-// (api/r2-upload.js) unhe Vercel Environment Variables se padhta hai.
+// ── CLOUDFLARE R2 UPLOAD (direct-to-R2 via presigned URL) ──
+// ✅ FIX: Ab image/video Cloudflare R2 (bucket: "showfy") mein SEEDHA upload
+// hote hain — Vercel function sirf ek chhoti "permission slip" (presigned URL)
+// banata hai, asli file browser se seedha R2 ko jaati hai. Isse Vercel ke
+// body-size limit (~4.5MB) ka koi issue nahi aata, chahe video jitna bhi bada ho.
 async function uploadToR2(file) {
   const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
   toast('📤 Uploading to Cloudflare... ' + sizeMB + 'MB');
 
   const filename = file.name || ('file-' + Date.now());
-  let res;
+  const contentType = file.type || 'application/octet-stream';
+
+  // Step 1 — ek chhoti si presigned URL maango (fast, tiny request)
+  let presignRes;
   try {
-    res = await fetch('/api/r2-upload?filename=' + encodeURIComponent(filename), {
+    presignRes = await fetch(
+      '/api/r2-presign?filename=' + encodeURIComponent(filename) +
+      '&type=' + encodeURIComponent(contentType)
+    );
+  } catch (e) {
+    throw new Error('Network error (presign): ' + e.message);
+  }
+  if (!presignRes.ok) {
+    let bodyText = '';
+    try { bodyText = await presignRes.text(); } catch (e) {}
+    throw new Error('Presign failed: HTTP ' + presignRes.status + ' — ' + bodyText.slice(0, 200));
+  }
+  const { uploadUrl, publicUrl } = await presignRes.json();
+  if (!uploadUrl || !publicUrl) throw new Error('Presign: invalid response');
+
+  // Step 2 — asli file seedha R2 ko bhejo (Vercel bypass, koi size limit nahi)
+  let putRes;
+  try {
+    putRes = await fetch(uploadUrl, {
       method: 'PUT',
-      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      headers: { 'Content-Type': contentType },
       body: file
     });
   } catch (e) {
-    throw new Error('Network error (Cloudflare upload): ' + e.message);
+    throw new Error('Network error (R2 upload): ' + e.message);
   }
-  if (!res.ok) {
-    let bodyText = '';
-    try { bodyText = await res.text(); } catch (e) {}
-    throw new Error('Cloudflare upload failed: HTTP ' + res.status + ' — ' + bodyText.slice(0, 200));
+  if (!putRes.ok) {
+    throw new Error('Cloudflare upload failed: HTTP ' + putRes.status);
   }
-  const data = await res.json();
-  if (!data.url) throw new Error('Cloudflare upload: no URL returned');
-  return { url: data.url, isVideo: (file.type || '').startsWith('video') };
+
+  return { url: publicUrl, isVideo: contentType.startsWith('video') };
 }
 
 // ── Video ka pehla frame capture karke thumbnail banao (client-side) ──
