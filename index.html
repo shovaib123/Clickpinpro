@@ -4219,7 +4219,35 @@ async function uploadVideoToBunnyStream(file, title, onProgress) {
   throw new Error('Bunny processing did not finish within 35 seconds (timeout)');
 }
 
-// ── CLOUDINARY UPLOAD (fallback / images) ──
+// ── CLOUDFLARE R2 UPLOAD (via secure Vercel serverless proxy) ──
+// ✅ FIX: Ab image/video Cloudflare R2 (bucket: "showfy") mein upload hote hain.
+// Secret keys kabhi bhi browser mein nahi aatin — sirf server-side proxy
+// (api/r2-upload.js) unhe Vercel Environment Variables se padhta hai.
+async function uploadToR2(file) {
+  const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+  toast('📤 Uploading to Cloudflare... ' + sizeMB + 'MB');
+
+  const filename = file.name || ('file-' + Date.now());
+  let res;
+  try {
+    res = await fetch('/api/r2-upload?filename=' + encodeURIComponent(filename), {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file
+    });
+  } catch (e) {
+    throw new Error('Network error (Cloudflare upload): ' + e.message);
+  }
+  if (!res.ok) {
+    let bodyText = '';
+    try { bodyText = await res.text(); } catch (e) {}
+    throw new Error('Cloudflare upload failed: HTTP ' + res.status + ' — ' + bodyText.slice(0, 200));
+  }
+  const data = await res.json();
+  if (!data.url) throw new Error('Cloudflare upload: no URL returned');
+  return { url: data.url, isVideo: (file.type || '').startsWith('video') };
+}
+
 async function uploadToBunny(file) {
   const ext = (file.name || '').split('.').pop().toLowerCase();
   const isVideo = file.type.startsWith('video') ||
@@ -4231,95 +4259,17 @@ async function uploadToBunny(file) {
     uploadFile = await compressImage(file);
   }
 
-  const sizeMB = (uploadFile.size / (1024*1024)).toFixed(1);
-  toast('📤 Uploading to Bunny.net... ' + sizeMB + 'MB');
-
-  // Step 1 — Bunny Stream API pe video create karo (video ke liye)
-  // Step 1 — Bunny Storage pe image upload karo (image ke liye)
-  if (isVideo) {
-    // ── VIDEO: Cloudinary (instant URL + auto thumbnail) ──
-    const sizeMB2 = (uploadFile.size / (1024*1024)).toFixed(1);
-    toast('📤 Uploading video... ' + sizeMB2 + 'MB');
-    const formData = new FormData();
-    formData.append('file', uploadFile);
-    formData.append('upload_preset', 'clickpin_unsigned');
-    formData.append('resource_type', 'video');
-    let res;
-    try {
-      res = await fetch(
-        'https://api.cloudinary.com/v1_1/dtmxr5eq7/video/upload',
-        { method: 'POST', body: formData }
-      );
-    } catch(e) {
-      throw new Error('Network error (video upload): ' + e.message);
-    }
-    if (!res.ok) {
-      const t = await res.text().catch(()=>'');
-      throw new Error('Video upload error ' + res.status + ': ' + t.substring(0,200));
-    }
-    const data = await res.json();
-    if (data.error) throw new Error('Upload error: ' + data.error.message);
-    if (!data.secure_url) throw new Error('No URL received from server');
-    // ✅ Cloudinary auto-generates thumbnail from video
-    const videoUrl = data.secure_url;
-    return { url: videoUrl, guid: null, isVideo: true };
-
-  } else {
-    // ── IMAGE: Bunny Storage API ──
-    // Bunny Storage zone ka naam aur hostname chahiye
-    // Hum CDN host se storage zone deduce karenge
-    // Storage: PUT https://storage.bunnycdn.com/{zone}/{filename}
-    // Yahan hum same library ke CDN pe image bhi store kar sakte hain
-    // Actually — images ke liye Bunny Storage ya same CDN ka use karein
-    // Simple approach: Bunny Stream library pe image bhi upload karein as video thumbnail
-    // Better: Bunny Storage (separate). Lekin API key same hai.
-    // Storage zone naam: hum 'showfy-images' assume kar sakte hain ya auto-create
-    // ---- SAFE APPROACH: Image ke liye bhi Bunny Stream pe video create + thumbnail use ----
-    // Actually simplest: Use Bunny Storage REST API
-    // Storage hostname: storage.bunnycdn.com
-    // Zone: showfy (ya jo bhi zone hai) — hum storage.bunnycdn.com/showfy/ use karein
-    // Lekin storage zone ka naam pata nahi — CDN host se deduce: vz-6f0aaff7-ec7 → zone unknown
-    // SAFEST: Image ko bhi direct Bunny Stream pe upload karo as image file
-    // Actually Bunny CDN has "Bunny Optimize" — ya hum base64 data URL use karte hain for images
-
-    // ✅ Images: Cloudinary pe upload — instant CDN URL, Firestore mein save hoga
-    toast('📤 Uploading image...');
-    const imgFormData = new FormData();
-    imgFormData.append('file', uploadFile);
-    imgFormData.append('upload_preset', 'clickpin_unsigned');
-    let imgRes;
-    try {
-      imgRes = await fetch(
-        'https://api.cloudinary.com/v1_1/dtmxr5eq7/image/upload',
-        { method: 'POST', body: imgFormData }
-      );
-    } catch(e) {
-      // Network error — fallback to base64
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (ev) => resolve({ url: ev.target.result, isVideo: false });
-        reader.onerror = () => reject(new Error('Image read error'));
-        reader.readAsDataURL(uploadFile);
-      });
-    }
-    if (!imgRes.ok) {
-      // Server error — fallback to base64
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (ev) => resolve({ url: ev.target.result, isVideo: false });
-        reader.onerror = () => reject(new Error('Image read error'));
-        reader.readAsDataURL(uploadFile);
-      });
-    }
-    const imgData = await imgRes.json();
-    if (imgData.secure_url) {
-      return { url: imgData.secure_url, isVideo: false };
-    }
-    // Final fallback
+  try {
+    // ✅ Primary path: Cloudflare R2 (image aur video dono)
+    return await uploadToR2(uploadFile);
+  } catch (e) {
+    console.error('[R2 upload] failed, falling back to base64:', e.message);
+    toast('⚠️ Cloudflare upload failed, using local preview');
+    // Fallback: base64 (offline / server-config-missing safety net)
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (ev) => resolve({ url: ev.target.result, isVideo: false });
-      reader.onerror = () => reject(new Error('Image read error'));
+      reader.onload = (ev) => resolve({ url: ev.target.result, isVideo });
+      reader.onerror = () => reject(new Error('File read error'));
       reader.readAsDataURL(uploadFile);
     });
   }
