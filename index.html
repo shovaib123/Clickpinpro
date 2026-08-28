@@ -1701,7 +1701,7 @@ footer { margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
       <div class="dz-icon" id="dzIcon">🖼️</div>
       <div class="dz-text" id="dzText">Click to choose a Photo or Video</div>
       <div class="dz-sub">Image: PNG JPG WEBP | Video/Reel: MP4 MOV</div>
-      <div class="dz-sub" id="dzVideoLimit" style="margin-top:4px;color:var(--red);font-weight:600;display:none">⏱️ Max 5 minutes · 📦 Max 12MB</div>
+      <div class="dz-sub" id="dzVideoLimit" style="margin-top:4px;color:var(--red);font-weight:600;display:none">⏱️ Max 15 minutes</div>
     </div>
     <img id="uploadPreviewImg" class="upload-preview-img" src="" alt="">
     <video id="uploadVideoPreview" class="upload-video-preview" controls playsinline disablePictureInPicture disableRemotePlayback></video>
@@ -2375,6 +2375,184 @@ const AN={daily:[420,380,510,490,620,580,710,660,730,690,810,780,850,920],mU:[12
 // ─── STATE ───
 const AC={u:'admin',p:'showfy@2025'};
 let aCat='All',aTab='home',savedSet=new Set(),likedSet=new Set(),openPinId=null,sharePin=null;
+// Restore liked hearts after refresh
+try {
+  JSON.parse(localStorage.getItem('cp_liked_posts') || '[]').forEach(id => {
+    likedSet.add(id);
+    const n = Number(id);
+    if (!isNaN(n)) likedSet.add(n);
+  });
+} catch(e) {}
+
+
+// ═══════════════════════════════════════════════════
+// REAL ENGAGEMENT (Firestore) — likes / views / shares / follow
+// Media files = Cloudflare R2; social counts = Firebase (already linked)
+// ═══════════════════════════════════════════════════
+function _engUid() {
+  try {
+    if (typeof fbAuth !== 'undefined' && fbAuth && fbAuth.currentUser) return fbAuth.currentUser.uid;
+    const u = JSON.parse(localStorage.getItem('cp_current_user') || 'null');
+    return (u && (u.uid || u.email)) || null;
+  } catch(e) { return null; }
+}
+function _engName() {
+  return (typeof myClickPinName !== 'undefined' && myClickPinName) || localStorage.getItem('cp_user_name') || 'User';
+}
+function _findPin(id) {
+  return PIN_DATA.find(x => x.id == id || String(x.id) === String(id));
+}
+function _postDocId(p) {
+  return (p && p.firestoreId) ? p.firestoreId : null;
+}
+function _fmtCount(n) {
+  n = Math.max(0, parseInt(n, 10) || 0);
+  if (n >= 1000000) return (n/1000000).toFixed(1).replace(/\.0$/,'') + 'M';
+  if (n >= 1000) return (n/1000).toFixed(1).replace(/\.0$/,'') + 'k';
+  return String(n);
+}
+function _updateLikeUI(p) {
+  if (!p) return;
+  const n = _fmtCount(p.likes || 0);
+  const likeEl = document.getElementById('detailLikeCount');
+  if (likeEl) likeEl.textContent = n;
+  const pinMeta = document.querySelector('#pin' + p.id + ' .pin-likes');
+  if (pinMeta) pinMeta.textContent = '❤️ ' + n;
+  const rln = document.getElementById('rln' + p.id);
+  if (rln) rln.textContent = n;
+  const rlc = document.getElementById('rlc' + p.id);
+  if (rlc) rlc.textContent = likedSet.has(p.id) || likedSet.has(String(p.id)) ? '❤️' : '🤍';
+}
+async function syncLikeToFirestore(p, isLike) {
+  if (!db || !p) return;
+  // Agar abhi firestoreId nahi mila (upload just hua) — 2s baad retry
+  if (!p.firestoreId) {
+    setTimeout(() => { if (p.firestoreId) syncLikeToFirestore(p, isLike); }, 2000);
+    return;
+  }
+  const uid = _engUid();
+  const ref = db.collection('posts').doc(p.firestoreId);
+  try {
+    const FV = (window.firebase && firebase.firestore && firebase.firestore.FieldValue)
+      ? firebase.firestore.FieldValue : null;
+    if (FV && FV.increment) {
+      await ref.update({ likes: FV.increment(isLike ? 1 : -1) });
+    } else {
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) return;
+        const cur = snap.data().likes || 0;
+        const next = isLike ? cur + 1 : Math.max(0, cur - 1);
+        tx.update(ref, { likes: next });
+        p.likes = next;
+      });
+    }
+    // Read back accurate count
+    try {
+      const snap2 = await ref.get();
+      if (snap2.exists && typeof snap2.data().likes === 'number') {
+        p.likes = Math.max(0, snap2.data().likes);
+      }
+    } catch(e) {}
+    if (uid) {
+      const safeUid = String(uid).replace(/[\/\.\#\$\[\]]/g, '_');
+      const likeRef = ref.collection('likedBy').doc(safeUid);
+      if (isLike) await likeRef.set({ uid, name: _engName(), at: new Date().toISOString(), localId: p.id });
+      else await likeRef.delete().catch(()=>{});
+    }
+  } catch (e) {
+    console.log('like sync fail', e.message);
+    try { await ref.update({ likes: Math.max(0, p.likes || 0) }); } catch(e2) {}
+  }
+  _updateLikeUI(p);
+}
+async function recordView(id) {
+  const p = _findPin(id);
+  if (!p) return;
+  p.views = (p.views || 0) + 1;
+  const uid = _engUid();
+  const key = 'cp_viewed_' + (p.firestoreId || p.id);
+  // Avoid flooding: 1 view per post per browser session
+  try {
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+  } catch(e) {}
+  if (db && p.firestoreId) {
+    try {
+      await db.collection('posts').doc(p.firestoreId).update({
+        views: (window.firebase && firebase.firestore.FieldValue)
+          ? firebase.firestore.FieldValue.increment(1)
+          : (p.views || 1)
+      });
+    } catch(e) {
+      try { await db.collection('posts').doc(p.firestoreId).update({ views: p.views }); } catch(e2) {}
+    }
+  }
+}
+async function recordShare(id) {
+  const p = _findPin(id);
+  if (!p) return;
+  p.shares = (p.shares || 0) + 1;
+  if (db && p.firestoreId) {
+    try {
+      await db.collection('posts').doc(p.firestoreId).update({
+        shares: (window.firebase && firebase.firestore.FieldValue)
+          ? firebase.firestore.FieldValue.increment(1)
+          : (p.shares || 1)
+      });
+    } catch(e) {
+      try { await db.collection('posts').doc(p.firestoreId).update({ shares: p.shares }); } catch(e2) {}
+    }
+  }
+}
+async function toggleFollowUser(targetUid, targetName, btn) {
+  const uid = _engUid();
+  if (!uid) { toast('⚠️ Follow ke liye Sign In karo'); return; }
+  if (!targetUid && !targetName) return;
+  if (targetUid && targetUid === uid) return;
+  let follows = [];
+  try { follows = JSON.parse(localStorage.getItem('cp_follows') || '[]'); } catch(e) {}
+  const key = targetName || targetUid;
+  const isFollowing = follows.includes(key);
+  if (isFollowing) {
+    follows = follows.filter(x => x !== key);
+    if (btn) { btn.classList.remove('on'); btn.textContent = 'Follow'; }
+    toast('Unfollowed');
+  } else {
+    follows.push(key);
+    if (btn) { btn.classList.add('on'); btn.textContent = 'Following'; }
+    toast('✅ Following!');
+  }
+  localStorage.setItem('cp_follows', JSON.stringify(follows));
+  if (!db) return;
+  try {
+    const meRef = db.collection('users').doc(String(uid));
+    const followId = String(targetUid || targetName).replace(/[\/\.\#\$\[\]]/g, '_');
+    if (!isFollowing) {
+      await meRef.collection('following').doc(followId).set({
+        targetUid: targetUid || '', targetName: targetName || '', at: new Date().toISOString()
+      });
+      if (targetUid) {
+        await db.collection('users').doc(String(targetUid)).collection('followers').doc(String(uid)).set({
+          uid, name: _engName(), at: new Date().toISOString()
+        });
+        // notify
+        try {
+          await db.collection('notifications').add({
+            toUserId: targetUid, fromUserId: uid, fromName: _engName(),
+            type: 'follow', text: _engName() + ' started following you',
+            createdAt: new Date().toISOString(), read: false
+          });
+        } catch(e) {}
+      }
+    } else {
+      await meRef.collection('following').doc(followId).delete().catch(()=>{});
+      if (targetUid) await db.collection('users').doc(String(targetUid)).collection('followers').doc(String(uid)).delete().catch(()=>{});
+    }
+  } catch(e) { console.log('follow sync', e.message); }
+}
+
+
 
 // ══════════════════════════════════════════════════════════════════
 // ✅ RECOMMENDATION ALGORITHM ENGINE
@@ -3117,21 +3295,30 @@ function hoverStop(id){
 }
 
 // ─── SAVE ───
-function tgSave(e,id){e.stopPropagation();if(navigator.vibrate)navigator.vibrate([20]);const wasSaved=savedSet.has(id);savedSet.has(id)?savedSet.delete(id):savedSet.add(id);if(!wasSaved){const p=PIN_DATA.find(x=>x.id===id);if(p){p._saveCount=(p._saveCount||0)+1;trackInterest(p.cat,'save');}}toast(savedSet.has(id)?'✅ Saved!':'Removed from saved');applyFilters();if(typeof saveSavedToFirestore==='function'){try{saveSavedToFirestore();}catch(e2){}}}
+function tgSave(e,id){e.stopPropagation();if(navigator.vibrate)navigator.vibrate([20]);const wasSaved=savedSet.has(id);savedSet.has(id)?savedSet.delete(id):savedSet.add(id);const p=PIN_DATA.find(x=>x.id==id||String(x.id)===String(id));if(p){if(!wasSaved){p._saveCount=(p._saveCount||0)+1;p.saves=(p.saves||0)+1;trackInterest(p.cat,'save');if(db&&p.firestoreId){try{db.collection('posts').doc(p.firestoreId).update({saves:firebase.firestore.FieldValue.increment(1)}).catch(()=>{db.collection('posts').doc(p.firestoreId).update({saves:p.saves}).catch(()=>{});});}catch(e){}}}else{p.saves=Math.max(0,(p.saves||1)-1);if(db&&p.firestoreId){try{db.collection('posts').doc(p.firestoreId).update({saves:Math.max(0,p.saves)}).catch(()=>{});}catch(e){}}}}toast(savedSet.has(id)?'✅ Saved!':'Removed from saved');applyFilters();if(typeof saveSavedToFirestore==='function'){try{saveSavedToFirestore();}catch(e2){}}}
 
 // ─── DETAIL ───
 function openDetail(id){
   _hardStopAllVideos();
-  const p0=PIN_DATA.find(x=>x.id===id);if(!p0)return;
-  // ✅ SMART ROUTING — type + duration ke hisaab se decide karo
-  // (1) type==='reel' → hamesha scroll-feed (9:16 content)
-  // (2) type==='video' aur duration <=60s → scroll-feed (chhoti video, reel jaisi)
-  // (3) type==='video' aur duration >60s (ya duration pata nahi) → single-player
+  // Flexible id match (number / string from profile / Firestore)
+  const p0 = PIN_DATA.find(x => x.id == id || String(x.id) === String(id));
+  if(!p0){ toast('⚠️ Post not found'); return; }
+  id = p0.id;
+  // Normalize: if type says video/reel but vid empty, recover play URL from src
+  const _looksVideoUrl = (u) => {
+    if (!u || typeof u !== 'string') return false;
+    if (u.startsWith('blob:') || u.startsWith('data:video')) return true;
+    if (/\.(mp4|webm|mov|m4v|mkv)(\?|$)/i.test(u)) return true;
+    if (u.includes('b-cdn.net') && !u.includes('thumbnail')) return true;
+    if (u.includes('/video/') || u.includes('play_')) return true;
+    return false;
+  };
+  if (!p0.vid && _looksVideoUrl(p0.src)) {
+    p0.vid = p0.src;
+    if (!p0.type || p0.type === 'image') p0.type = 'video';
+  }
+  // ✅ SMART ROUTING — type + duration
   if (p0.type === 'reel') {
-    // ✅ FIX: agar pehle se koi detail view (aur uska video) khula hai — jaise
-    // "More to explore" se yahan aaye ho — to pehle usse band karo. Warna
-    // purana video bhi chalta rehta tha aur naye reel ki audio ke saath mix
-    // ho jaati thi (dono ek saath sunayi dete the).
     closeDetail();
     openReels(new Event('x'), id);
     return;
@@ -3142,43 +3329,41 @@ function openDetail(id){
     return;
   }
   pushHistory('detail_' + id);
-  // ✅ FIX: grid ke background videos ko pause kar do taaki wo fullscreen ke
-  // peeche confuse na hon (isse hi wapas aane par blank thumbnail wala bug aata tha)
   if (typeof pauseAllGridVideos === 'function') pauseAllGridVideos();
   if (typeof _stopGridObserver === 'function') _stopGridObserver();
-  // ✅ Defensive: agar reels view khuli reh gayi ho (kisi edge-case se), use bhi band karo
   const reelsViewEl = document.getElementById('reelsView');
   if (reelsViewEl && reelsViewEl.classList.contains('open')) closeReels();
-  const p=PIN_DATA.find(x=>x.id===id);if(!p)return;
-  openPinId=id;
+  const p = p0;
+  openPinId = id;
   trackInterest(p.cat, 'fullView');
-  const isReel=p.type==='reel',isVid=p.type==='video';
-  let mediaHtml='';
-  // Stop any existing video
-  const oldVid=document.querySelector('#detailMedia video');
-  if(oldVid){oldVid.pause();oldVid.src='';oldVid.load();}
+  if (typeof recordView === 'function') recordView(id);
+  const isReel = p.type === 'reel', isVid = p.type === 'video';
+  let mediaHtml = '';
+  const oldVid = document.querySelector('#detailMedia video');
+  if (oldVid) { try { oldVid.pause(); oldVid.src=''; oldVid.load(); } catch(e){} }
 
+  const playUrl = (p.vid && !p.vid.startsWith('data:image')) ? p.vid : (_looksVideoUrl(p.src) ? p.src : '');
   const isB64src = p.src && p.src.startsWith('data:');
-  const isB64vid = p.vid && p.vid.startsWith('data:');
-  const posterSrc = isB64src ? p.src : (p.src ? p.src.split('?')[0]+'?w=600&auto=format' : '');
-  const fullSrc = isB64src ? p.src : (p.src ? p.src.split('?')[0]+'?w=800&auto=format' : '');
+  const posterSrc = (!playUrl || (p.src && !_looksVideoUrl(p.src)))
+    ? (isB64src ? p.src : (p.src ? p.src.split('?')[0] + '?w=600&auto=format' : ''))
+    : '';
+  const fullSrc = isB64src ? p.src : (p.src ? p.src.split('?')[0] + '?w=800&auto=format' : '');
 
-  if((isReel||isVid) && p.vid){
-    mediaHtml=`<video id="detailVideo" src="${p.vid}" poster="${posterSrc}" controls playsinline disablePictureInPicture disableRemotePlayback preload="auto" style="width:100%;height:100%;object-fit:contain;display:block;background:#000;min-height:200px"></video>`;
-  } else if(isReel){
-    mediaHtml=`<img src="${posterSrc}" style="width:100%;height:100%;object-fit:contain;display:block" alt="${p.title}">`;
+  if ((isReel || isVid || playUrl) && playUrl) {
+    mediaHtml = `<video id="detailVideo" src="${playUrl}" ${posterSrc ? 'poster="'+posterSrc+'"' : ''} controls playsinline webkit-playsinline disablePictureInPicture disableRemotePlayback preload="auto" style="width:100%;height:100%;object-fit:contain;display:block;background:#000;min-height:200px"></video>`;
+  } else if (isReel) {
+    mediaHtml = `<img src="${posterSrc || fullSrc}" style="width:100%;height:100%;object-fit:contain;display:block" alt="${p.title||''}">`;
   } else {
-    mediaHtml=`<img src="${fullSrc}" style="width:100%;height:100%;object-fit:contain;display:block;background:#f5f5f5;min-height:200px" alt="${p.title}">`;
+    mediaHtml = `<img src="${fullSrc}" style="width:100%;height:100%;object-fit:contain;display:block;background:#f5f5f5;min-height:200px" alt="${p.title||''}">`;
   }
-  document.getElementById('detailMedia').innerHTML=mediaHtml;
-  // Explicit play with restored volume — reliable on all Android Chrome versions
-  if((isReel||isVid) && p.vid){
+  document.getElementById('detailMedia').innerHTML = mediaHtml;
+  if ((isReel || isVid || playUrl) && playUrl) {
     setTimeout(() => {
       const _dv = document.getElementById('detailVideo');
-      if(_dv && _dv.paused){
+      if (_dv && _dv.paused) {
         _dv.volume = 1;
         _dv.muted = false;
-        _dv.play().catch(()=>{ /* controls shown — user can tap to play */ });
+        _dv.play().catch(() => { /* user can tap controls */ });
       }
     }, 80);
   }
@@ -3347,46 +3532,35 @@ async function loadFollowersCount(p) {
 
 // ✅ Like Post
 function likePost() {
-  const p = PIN_DATA.find(x => x.id === openPinId);
+  const p = PIN_DATA.find(x => x.id === openPinId || String(x.id) === String(openPinId));
   if (!p) return;
   const btn = document.getElementById('detailLikeBtn');
   if (!btn) return;
-
-  // ✅ LocalStorage se liked state load karo
   let likedPosts = JSON.parse(localStorage.getItem('cp_liked_posts') || '[]');
-  const alreadyLiked = btn.classList.contains('liked') || likedPosts.includes(String(p.id));
+  const alreadyLiked = btn.classList.contains('liked') || likedPosts.includes(String(p.id)) || likedSet.has(p.id);
 
   if (alreadyLiked) {
-    p.likes = Math.max(0, p.likes - 1);
+    p.likes = Math.max(0, (p.likes || 0) - 1);
     btn.classList.remove('liked');
     btn.style.background = '#fff0f1';
     btn.style.color = '#e53935';
     likedPosts = likedPosts.filter(id => id !== String(p.id));
+    likedSet.delete(p.id); likedSet.delete(String(p.id));
+    syncLikeToFirestore(p, false);
   } else {
-    p.likes++;
+    p.likes = (p.likes || 0) + 1;
     btn.classList.add('liked');
     btn.style.background = '#e53935';
     btn.style.color = '#fff';
     toast('❤️ Liked!');
     if (navigator.vibrate) navigator.vibrate([20]);
     likedPosts.push(String(p.id));
+    likedSet.add(p.id);
     trackInterest(p.cat, 'like');
+    syncLikeToFirestore(p, true);
   }
-
-  // ✅ LocalStorage mein save karo
   localStorage.setItem('cp_liked_posts', JSON.stringify(likedPosts.slice(-500)));
-
-  const likeEl = document.getElementById('detailLikeCount');
-  if (likeEl) likeEl.textContent = p.likes >= 1000 ? (p.likes/1000).toFixed(1)+'k' : p.likes;
-
-  // Feed card mein bhi update karo
-  const pinMeta = document.querySelector(`#pin${p.id} .pin-likes`);
-  if (pinMeta) pinMeta.textContent = '❤️ ' + (p.likes >= 1000 ? (p.likes/1000).toFixed(1)+'k' : p.likes);
-
-  // Firestore mein update karo
-  if (db && p.firestoreId) {
-    db.collection('posts').doc(p.firestoreId).update({ likes: p.likes }).catch(()=>{});
-  }
+  _updateLikeUI(p);
 }
 
 // ─── DOWNLOAD FROM DETAIL ───
@@ -3562,9 +3736,11 @@ function shareTo(pl){
   };
   if(urls[pl]) setTimeout(()=>window.open(urls[pl],'_blank'), 300);
   toast('📲 '+pl.charAt(0).toUpperCase()+pl.slice(1)+' sharing...');
-  // ✅ Trending score ke liye share count aur interest track karo
+  // ✅ Real share count — sab users ko dikhe
   sharePin._shareCount = (sharePin._shareCount || 0) + 1;
+  sharePin.shares = (sharePin.shares || 0) + 1;
   trackInterest(sharePin.cat, 'share');
+  if (typeof recordShare === 'function') recordShare(sharePin.id);
 }
 
 async function nativeShare(){
@@ -3591,32 +3767,25 @@ function dlPin(e,id){e.stopPropagation();const p=PIN_DATA.find(x=>x.id===id);if(
 
 // ── FOLLOW + BELL ──
 function handleFollow(btn) {
-  const isNowFollowing = !btn.classList.contains('on');
-  btn.classList.toggle('on');
-  btn.textContent = isNowFollowing ? 'Following' : 'Follow';
+  const p = PIN_DATA.find(x => x.id == openPinId || String(x.id) === String(openPinId));
+  if (!p) { toast('⚠️ Post not found'); return; }
+  const targetUid = p.firestoreUserId || '';
+  const targetName = (p.user && p.user.name) || '';
+  if (!targetUid && !targetName) return;
+  // Own post
+  if (targetName && targetName === (myClickPinName || '')) {
+    toast('Ye aapki khud ki profile hai');
+    return;
+  }
+  toggleFollowUser(targetUid, targetName, btn);
   const bellBtn = document.getElementById('bellBtn');
   if (bellBtn) {
-    bellBtn.style.display = isNowFollowing ? 'flex' : 'none';
-    bellBtn.style.alignItems = 'center';
-    bellBtn.style.justifyContent = 'center';
-  }
-  if (isNowFollowing) {
-    toast('✅ Following! 🔔 Notifications on');
-    const p = PIN_DATA.find(x => x.id === openPinId);
-    if (p) {
-      let follows = JSON.parse(localStorage.getItem('cp_follows') || '[]');
-      if (!follows.includes(p.user.name)) { follows.push(p.user.name); localStorage.setItem('cp_follows', JSON.stringify(follows)); }
-    }
-    saveFollowNotification();
-  } else {
-    toast('Unfollowed');
-    const p = PIN_DATA.find(x => x.id === openPinId);
-    if (p) {
-      let follows = JSON.parse(localStorage.getItem('cp_follows') || '[]');
-      localStorage.setItem('cp_follows', JSON.stringify(follows.filter(x => x !== p.user.name)));
-    }
+    const follows = JSON.parse(localStorage.getItem('cp_follows') || '[]');
+    const on = follows.includes(targetName) || follows.includes(targetUid);
+    bellBtn.style.display = on ? 'flex' : 'none';
   }
 }
+
 
 function toggleBellNotif(btn) {
   const isOn = btn.textContent === '🔔';
@@ -3714,8 +3883,11 @@ function openReels(e,startId){
   pushHistory('reels');
   // ✅ Algorithm ke liye track karo — user ne is post ko fullscreen mein khola
   if (startId) {
-    const startPost = PIN_DATA.find(p => p.id === startId);
-    if (startPost) trackInterest(startPost.cat, 'fullView');
+    const startPost = PIN_DATA.find(p => p.id === startId || String(p.id) === String(startId));
+    if (startPost) {
+      trackInterest(startPost.cat, 'fullView');
+      if (typeof recordView === 'function') recordView(startPost.id);
+    }
   }
   // ✅ Scroll-feed mein sirf: actual reels + chhoti videos (<=60s) shamil hon.
   // Lambi videos (>60s, ya duration pata nahi) is feed mein nahi aani chahiye —
@@ -3899,17 +4071,22 @@ function buildReelsView(reels, startId){
         <div class="rs-user-row">
           <img src="${(p.user&&p.user.avatar)||''}" alt="${(p.user&&p.user.name)||''}">
           <div><span class="rs-uname">${(p.user&&p.user.name)||'User'}</span><span class="rs-uhandle">@${((p.user&&p.user.name)||'user').toLowerCase().replace(/\s+/g,'_')}</span></div>
-          <button class="rs-follow" onclick="this.classList.toggle('on');toast(this.classList.contains('on')?'✅ Following!':'Unfollow ho gaya')">Follow</button>
+          <button class="rs-follow" onclick="event.stopPropagation();const _p=PIN_DATA.find(x=>x.id==${p.id});if(_p)toggleFollowUser(_p.firestoreUserId||'',(_p.user&&_p.user.name)||'',this)">Follow</button>
         </div>
         <div class="rs-caption">${p.title ? `<div class="rs-title" style="font-weight:700;margin-bottom:2px">${p.title}</div>` : ''}${(p.desc && p.desc !== 'New post') ? `<div class="rs-desc">${p.desc}</div>` : ''}</div>
         <div class="rs-tags"><span class="rs-tag">#${p.cat||'Showfy'}</span><span class="rs-tag">#Showfy</span></div>
       </div>
       <div class="rs-actions">
-        <button class="rs-act" data-liked="${likedSet.has(p.id)?'1':'0'}" onclick="tgReelLike(this,${p.id})">
-          <div class="rs-act-ic" id="rlc${p.id}">${likedSet.has(p.id)?'❤️':'🤍'}</div><span class="rs-act-lbl" id="rln${p.id}">${p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes}</span>
+        <button class="rs-act" data-liked="${(likedSet.has(p.id)||likedSet.has(String(p.id)))?'1':'0'}" onclick="tgReelLike(this,${JSON.stringify(p.id)})">
+          <div class="rs-act-ic" id="rlc${p.id}">${(likedSet.has(p.id)||likedSet.has(String(p.id)))?'❤️':'🤍'}</div>
+          <span class="rs-act-lbl" id="rln${p.id}">${(typeof _fmtCount==='function'?_fmtCount(p.likes||0):(p.likes||0))}</span>
         </button>
-        <button class="rs-act" onclick="openShareFor(event,${p.id})"><div class="rs-act-ic">📤</div><span class="rs-act-lbl">Share</span></button>
-        <button class="rs-act" id="muteBtn${p.id}" onclick="toggleReelMute(event,${p.id})"><div class="rs-act-ic">${window._reelsMuted?'🔇':'🔊'}</div></button>
+        <button class="rs-act" onclick="event.stopPropagation();openComments(${JSON.stringify(p.id)})">
+          <div class="rs-act-ic">💬</div>
+          <span class="rs-act-lbl" id="rcc${p.id}">${(commentsDB[p.id]||commentsDB[p.firestoreId]||[]).length||0}</span>
+        </button>
+        <button class="rs-act" onclick="openShareFor(event,${JSON.stringify(p.id)})"><div class="rs-act-ic">📤</div><span class="rs-act-lbl">Share</span></button>
+        <button class="rs-act" id="muteBtn${p.id}" onclick="toggleReelMute(event,${JSON.stringify(p.id)})"><div class="rs-act-ic">${window._reelsMuted?'🔇':'🔊'}</div></button>
         <button class="rs-act" onclick="toggleReelMoreMenu(event,${p.id})"><div class="rs-act-ic">⋯</div></button>
         <div class="rs-more-menu" id="rsMoreMenu${p.id}" style="display:none;position:absolute;right:54px;bottom:0;background:#1c1c1e;border-radius:14px;overflow:hidden;min-width:160px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:60">
           <button onclick="tgSave(new Event('x'),${p.id});toggleReelMoreMenu(event,${p.id})" style="width:100%;text-align:left;background:none;border:none;padding:13px 16px;font-size:13px;font-weight:600;color:#fff;cursor:pointer;display:flex;align-items:center;gap:10px">🔖 Save</button>
@@ -4017,19 +4194,33 @@ document.addEventListener('click', function(e){
   }
 });
 function tgReelLike(btn,id){
-  const p=PIN_DATA.find(x=>x.id===id);if(!p)return;
+  const p=PIN_DATA.find(x=>x.id==id||String(x.id)===String(id));if(!p)return;
   const ic=document.getElementById('rlc'+id),cnt=document.getElementById('rln'+id);
   if(navigator.vibrate)navigator.vibrate([15]);
-  if(btn.dataset.liked==='1'){
-    btn.dataset.liked='0';p.likes--;likedSet.delete(id);
-    ic.textContent='🤍';ic.style.filter='none';ic.style.transform='scale(1)';
+  if(btn.dataset.liked==='1' || likedSet.has(id) || likedSet.has(p.id)){
+    btn.dataset.liked='0';
+    p.likes=Math.max(0,(p.likes||0)-1);
+    likedSet.delete(id); likedSet.delete(p.id); likedSet.delete(String(p.id));
+    if(ic){ic.textContent='🤍';ic.style.filter='none';ic.style.transform='scale(1)';}
+    syncLikeToFirestore(p, false);
   } else {
-    btn.dataset.liked='1';p.likes++;likedSet.add(id);
-    ic.textContent='❤️';ic.style.filter='drop-shadow(0 0 8px #E60023)';ic.style.transform='scale(1.3)';
-    setTimeout(()=>ic.style.transform='scale(1)',300);toast('❤️ Liked!');
+    btn.dataset.liked='1';
+    p.likes=(p.likes||0)+1;
+    likedSet.add(id); likedSet.add(p.id);
+    if(ic){ic.textContent='❤️';ic.style.filter='drop-shadow(0 0 8px #E60023)';ic.style.transform='scale(1.3)';
+    setTimeout(()=>ic.style.transform='scale(1)',300);}
+    toast('❤️ Liked!');
     trackInterest(p.cat,'like');
+    syncLikeToFirestore(p, true);
   }
-  cnt.textContent=p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes;
+  let likedPosts=JSON.parse(localStorage.getItem('cp_liked_posts')||'[]');
+  if(likedSet.has(p.id)||likedSet.has(id)){
+    if(!likedPosts.includes(String(p.id))) likedPosts.push(String(p.id));
+  } else {
+    likedPosts=likedPosts.filter(x=>x!==String(p.id));
+  }
+  localStorage.setItem('cp_liked_posts', JSON.stringify(likedPosts.slice(-500)));
+  if(cnt) cnt.textContent=_fmtCount(p.likes);
 }
 
 // ─── UPLOAD ───
@@ -4255,8 +4446,7 @@ async function trimVideoTo(file, maxSec) {
         reject(new Error('Recorder error: ' + (e.error?.message || 'unknown')));
       };
 
-      // Start recording — ✅ HARD CAP: hamesha sirf first maxSec (300s = 5 min) tak record karo,
-      // chahe original video kitni bhi badi/lambi ho (1GB, 2 ghante — sab pe yeh same cap lagega)
+      // Start recording — cap at maxSec (default 15 min = 900s)
       recorder.start(200); // collect every 200ms
       video.currentTime = 0;
       video.play().then(() => {
@@ -4307,18 +4497,11 @@ function handleFileSelect(inp){
   const isVid = f.type.startsWith('video')
     || ['mp4','mov','webm','avi','mkv','m4v','3gp'].includes(ext);
 
-  // ✅ HARD LIMITS: Image max 5MB, Video max 12MB AND max 5 minutes
+  // ✅ Image max 5MB only. Video: no file-size limit — only max 15 minutes duration.
   const maxImgSize = 5 * 1024 * 1024;
-  const maxVidSize = 12 * 1024 * 1024;
   if (!isVid && f.size > maxImgSize) {
     toast('⚠️ Image too large! Max 5MB allowed.');
     upFile = null;
-    return;
-  }
-  if (isVid && f.size > maxVidSize) {
-    toast('⚠️ Video too large (' + (f.size/1024/1024).toFixed(1) + 'MB)! Maximum 12MB allowed. Please choose a smaller video.');
-    upFile = null;
-    document.getElementById('dropzone').style.display = 'block';
     return;
   }
 
@@ -4385,14 +4568,14 @@ function handleFileSelect(inp){
         document.getElementById('dropzone').style.display = 'block';
       };
 
-      // ✅ Duration check — 5 min se zyada hai toh seedha REJECT karo (no trimming — fast & simple)
+      // ✅ Duration check — max 15 minutes only (no file size limit on video)
       vEl.onloadedmetadata = function() {
         _metaLoaded = true;
         clearTimeout(_loadTimeout);
-        if (vEl.duration > 300) {
+        if (vEl.duration > 900) {
           const mins = Math.floor(vEl.duration/60);
           const secs = Math.floor(vEl.duration%60);
-          toast(`⚠️ Video too long (${mins}m ${secs}s)! Maximum 5 minutes allowed. Please choose a shorter video.`);
+          toast(`⚠️ Video too long (${mins}m ${secs}s)! Maximum 15 minutes allowed. Please choose a shorter video.`);
           upFile = null; upData = null;
           vEl.src = ''; vEl.style.display = 'none';
           URL.revokeObjectURL(blobUrl);
@@ -4926,7 +5109,8 @@ async function submitPin(){
           id: np.id, type: np.type,
           src: effectiveSrc,   // ✅ never empty — video URL used as fallback
           vid: vidToSave,
-          title: np.title, desc: np.desc, cat: np.cat, likes: 0,
+          title: np.title, desc: np.desc, cat: np.cat,
+          likes: 0, views: 0, shares: 0, saves: 0,
           userId, userName: currentUser.name, userAvatar: avatarToSave,
           createdAt: new Date().toISOString()
         });
@@ -5749,8 +5933,13 @@ const SAMPLE_COMMENTS = [
 
 function openComments(id) {
   activeCommentPin = id;
-  const p = PIN_DATA.find(x => x.id === id);
-  if (!p) return;
+  openPinId = id;
+  const p = PIN_DATA.find(x => x.id == id || String(x.id) === String(id));
+  if (!p) { toast('⚠️ Post not found'); return; }
+  // Prefetch under both keys
+  if (p.firestoreId && commentsDB[p.firestoreId] && !commentsDB[id]) {
+    commentsDB[id] = commentsDB[p.firestoreId];
+  }
 
   // ✅ Comment input mein apni real DP dikhao
   const myAv = localStorage.getItem('cp_avatar');
@@ -5774,8 +5963,7 @@ function openComments(id) {
 function _renderComments(id) {
   const stored = commentsDB[id] || [];
   const all = [...stored];
-  // Sirf agar koi real comment nahi toh sample dikhao
-  if (all.length === 0) all.push(...SAMPLE_COMMENTS.slice(0, 2 + (id % 2)));
+  // Real comments only — no fake sample comments
   document.getElementById('commentsCount').textContent = `(${all.length})`;
   document.getElementById('commentsList').innerHTML = all.map((c,i) => `
     <div class="comment-item">
@@ -5794,39 +5982,56 @@ function _renderComments(id) {
 async function loadCommentsFromFirestore(pinId) {
   if (!db) return;
   try {
-    const firestoreId = (PIN_DATA.find(x=>x.id===pinId)||{}).firestoreId;
-    const queryId = firestoreId || String(pinId);
-    const snap = await db.collection('comments')
-      .where('pinId', '==', queryId)
-      .orderBy('createdAt', 'desc')
-      .limit(50).get();
-    if (snap.empty) return;
+    const p = PIN_DATA.find(x => x.id == pinId || String(x.id) === String(pinId));
+    const ids = [String(pinId)];
+    if (p && p.firestoreId) ids.push(String(p.firestoreId));
+    // Also try numeric
+    if (p && p.id != null) ids.push(String(p.id));
+    const uniqueIds = [...new Set(ids)];
+    const key = p ? (p.firestoreId || p.id) : pinId;
     if (!commentsDB[pinId]) commentsDB[pinId] = [];
+    // Mirror under firestoreId key too
+    if (p && p.firestoreId && !commentsDB[p.firestoreId]) commentsDB[p.firestoreId] = commentsDB[pinId];
+
     let added = 0;
-    snap.forEach(doc => {
-      const d = doc.data();
-      const exists = commentsDB[pinId].some(c => c.firestoreId === doc.id);
-      if (!exists) {
-        commentsDB[pinId].push({
-          firestoreId: doc.id,
-          av  : (d.av && d.av.startsWith('http')) ? d.av : '',
-          name: d.name || 'User',
-          text: d.text || '',
-          time: timeSince(d.createdAt),
-          likes: d.likes || 0
+    for (const qid of uniqueIds) {
+      try {
+        const snap = await db.collection('comments').where('pinId', '==', qid).limit(50).get();
+        snap.forEach(doc => {
+          const d = doc.data();
+          const exists = commentsDB[pinId].some(c => c.firestoreId === doc.id || (c.text === d.text && c.name === d.name));
+          if (!exists) {
+            const row = {
+              firestoreId: doc.id,
+              av  : (d.av && d.av.startsWith('http')) ? d.av : '',
+              name: d.name || 'User',
+              text: d.text || '',
+              time: (typeof timeSince === 'function' && d.createdAt) ? timeSince(d.createdAt) : (d.createdAt || 'now'),
+              likes: d.likes || 0
+            };
+            commentsDB[pinId].push(row);
+            added++;
+          }
         });
-        added++;
+      } catch(err) {
+        console.log('comment query', qid, err.message);
       }
-    });
-    if (added > 0) {
-      localStorage.setItem('cp_comments', JSON.stringify(commentsDB));
-      _renderComments(pinId);
     }
+    // Sort newest first if possible
+    commentsDB[pinId].sort((a, b) => (b.firestoreId || '').localeCompare(a.firestoreId || ''));
+    if (p && p.firestoreId) commentsDB[p.firestoreId] = commentsDB[pinId];
+    localStorage.setItem('cp_comments', JSON.stringify(commentsDB));
+    if (added > 0 || commentsDB[pinId].length) _renderComments(pinId);
+    // Update comment counts on UI
+    const cnt = commentsDB[pinId].length;
+    const dcc = document.getElementById('detailCommentCount');
+    if (dcc) dcc.textContent = String(cnt);
+    const rcc = document.getElementById('rcc' + pinId);
+    if (rcc) rcc.textContent = cnt >= 1000 ? (cnt/1000).toFixed(1)+'k' : String(cnt);
   } catch(e) {
     console.log('Comments load fail:', e.message);
   }
 }
-
 function likeComment(pinId, idx, btn) {
   const c = (commentsDB[pinId] || [])[idx];
   if (!c) return;
@@ -5873,20 +6078,38 @@ function postComment() {
   const commentedPost = PIN_DATA.find(p => p.id === id);
   if (commentedPost) trackInterest(commentedPost.cat, 'comment');
 
-  // Firestore mein bhi save karo
+  // Firestore — pinId = firestoreId (stable across refresh) + localId backup
   if (db) {
-    const p = PIN_DATA.find(x => x.id === id);
+    const p = PIN_DATA.find(x => x.id == id || String(x.id) === String(id));
     const queryId = (p && p.firestoreId) ? p.firestoreId : String(id);
     db.collection('comments').add({
       pinId    : queryId,
+      localId  : String(id),
       av       : safeAvatar,
       name     : myClickPinName || myClickPinId || 'Guest',
       text,
       likes    : 0,
       userId   : (fbAuth && fbAuth.currentUser) ? fbAuth.currentUser.uid : '',
       createdAt: new Date().toISOString()
+    }).then(docRef => {
+      // Keep local copy linked
+      if (commentsDB[id] && commentsDB[id][0]) commentsDB[id][0].firestoreId = docRef.id;
+      localStorage.setItem('cp_comments', JSON.stringify(commentsDB));
     }).catch(e => console.log('Comment save fail:', e.message));
+    // Also bump comments count on post doc
+    if (p && p.firestoreId) {
+      try {
+        const FV = firebase.firestore.FieldValue;
+        db.collection('posts').doc(p.firestoreId).update({ comments: FV.increment(1) }).catch(()=>{});
+      } catch(e) {}
+    }
   }
+  // Update reel / detail comment badge
+  const cnt = (commentsDB[id] || []).length;
+  const rcc = document.getElementById('rcc' + id);
+  if (rcc) rcc.textContent = cnt >= 1000 ? (cnt/1000).toFixed(1)+'k' : String(cnt);
+  const dcc = document.getElementById('detailCommentCount');
+  if (dcc) dcc.textContent = String(cnt);
 }
 
 // ══════════════════════════════════════════════
@@ -6574,12 +6797,23 @@ function renderProfileTab(tab, query) {
       return;
     }
     el.innerHTML = `<div class="profile-pins-grid">${pins.map(p => {
-      const src = p.src.startsWith('data:') ? p.src : p.src.split('?')[0]+'?w=200&auto=format';
+      const rawSrc = p.src || '';
+      const isVidPost = p.type === 'video' || p.type === 'reel' || (p.vid && p.vid.length > 8);
+      // Thumbnail: image src preferred; never use raw video URL as img
+      let src = '';
+      if (rawSrc.startsWith('data:image')) src = rawSrc;
+      else if (rawSrc && !/\.(mp4|webm|mov)(\?|$)/i.test(rawSrc) && !(rawSrc.includes('b-cdn.net') && !rawSrc.includes('thumbnail')))
+        src = rawSrc.startsWith('data:') ? rawSrc : (rawSrc.split('?')[0] + '?w=200&auto=format');
+      else if (p.vid) {
+        const m = String(p.vid).match(/https?:\/\/([a-z0-9\-]+\.b-cdn\.net)\/([a-f0-9\-]+)\//i);
+        if (m) src = 'https://' + m[1] + '/' + m[2] + '/thumbnail.jpg';
+      }
+      if (!src) src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect fill="#111" width="100%" height="100%"/><text x="50%" y="50%" fill="#fff" text-anchor="middle" dy=".3em" font-size="28">🎬</text></svg>');
       const timeLabel = p._postTime ? formatRelativeTime(p._postTime) : '';
-      return `<div class="profile-pin-item" onclick="openDetail(${p.id})">
-        <img src="${src}" alt="${p.title}" loading="lazy">
-        ${p.type !== 'image' ? '<div style="position:absolute;top:6px;left:6px;background:rgba(0,0,0,.6);color:#fff;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">🎬</div>' : ''}
-        ${timeLabel ? `<div class="post-time-label" data-exact="0" onclick="togglePostTime(this,${p._postTime})" style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;border-radius:8px;padding:2px 7px;font-size:9px;font-weight:600;cursor:pointer">${timeLabel}</div>` : ''}
+      return `<div class="profile-pin-item" style="position:relative" onclick="openDetail(${JSON.stringify(p.id)})">
+        <img src="${src}" alt="${(p.title||'').replace(/"/g,'')}" loading="lazy" onerror="this.style.background='#111'">
+        ${isVidPost ? '<div style="position:absolute;top:6px;left:6px;background:rgba(0,0,0,.6);color:#fff;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">🎬</div>' : ''}
+        ${timeLabel ? `<div class="post-time-label" data-exact="0" onclick="event.stopPropagation();togglePostTime(this,${p._postTime})" style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;border-radius:8px;padding:2px 7px;font-size:9px;font-weight:600;cursor:pointer">${timeLabel}</div>` : ''}
       </div>`;}).join('')}</div>`;
   } else if (tab === 'boards') {
     el.innerHTML = `<div class="profile-boards-grid">${BOARDS.map(b => {
@@ -6617,10 +6851,14 @@ function renderProfileTab(tab, query) {
       el.innerHTML = `<div class="empty-tab"><span class="empty-tab-ic">🔖</span><p>No saved pins yet</p></div>`;
       return;
     }
-    el.innerHTML = `<div class="profile-pins-grid">${saved.map(p => `
-      <div class="profile-pin-item" onclick="openDetail(${p.id})">
-        <img src="${p.src.split('?')[0]}?w=200&auto=format" alt="${p.title}" loading="lazy">
-      </div>`).join('')}</div>`;
+    el.innerHTML = `<div class="profile-pins-grid">${saved.map(p => {
+      const s = p.src || '';
+      const thumb = s.startsWith('data:') ? s : (s ? s.split('?')[0]+'?w=200&auto=format' : '');
+      return `<div class="profile-pin-item" onclick="openDetail(${JSON.stringify(p.id)})">
+        <img src="${thumb}" alt="${(p.title||'').replace(/"/g,'')}" loading="lazy">
+        ${(p.type==='video'||p.type==='reel'||p.vid)?'<div style="position:absolute;top:6px;left:6px;background:rgba(0,0,0,.6);color:#fff;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">🎬</div>':''}
+      </div>`;
+    }).join('')}</div>`;
   }
 }
 
@@ -8376,9 +8614,22 @@ function initFirebase() {
     .onSnapshot(snapshot => {
       let changed = false;
       snapshot.docChanges().forEach(change => {
-        if (change.type !== 'added') return;
         const doc = change.doc;
         const raw = doc.data();
+        // ✅ modified = likes/views/shares update from other users — merge live
+        if (change.type === 'modified') {
+          const existing = PIN_DATA.find(p => p.firestoreId === doc.id);
+          if (existing) {
+            if (typeof raw.likes === 'number') existing.likes = raw.likes;
+            if (typeof raw.views === 'number') existing.views = raw.views;
+            if (typeof raw.shares === 'number') existing.shares = raw.shares;
+            if (typeof raw.saves === 'number') existing.saves = raw.saves;
+            if (typeof _updateLikeUI === 'function') _updateLikeUI(existing);
+            changed = true;
+          }
+          return;
+        }
+        if (change.type !== 'added') return;
         // Already in feed? Skip (firestoreId OR local id from fresh upload).
         if (PIN_DATA.some(p => p.firestoreId === doc.id || (raw.id && p.id === raw.id))) return;
         const _rtTitle = (raw.title || '').trim().toLowerCase();
@@ -8413,6 +8664,8 @@ function initFirebase() {
           desc           : raw.desc || '',
           cat            : raw.cat || 'Home',
           likes          : raw.likes || 0,
+          views          : raw.views || 0,
+          shares         : raw.shares || 0,
           _postTime      : postTimeMs,
           user: {
             name     : raw.userName || 'Showfy User',
@@ -8581,11 +8834,13 @@ async function loadAllPostsFromFirestore() {
           desc            : sd.desc || '',
           cat             : sd.cat || 'Home',
           likes           : sd.likes || 0,
+          views           : sd.views || 0,
+          shares          : sd.shares || 0,
           _postTime       : postTimeMs2, // ✅ for "uploaded X ago" display
           user            : {
             name     : sd.userName || 'Showfy User',
             avatar   : safeAvatar,
-            followers: '0'
+            followers: String(sd.userFollowers || '0')
           }
         };
         // ✅ Firestore posts unshift karo — latest pehle
