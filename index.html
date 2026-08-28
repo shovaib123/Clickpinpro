@@ -203,7 +203,7 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(255,
 .empty-state h3{font-family:var(--font-display);font-size:22px;margin-bottom:8px;color:var(--dark)}
 
 /* REELS FULLSCREEN */
-#reelsView{display:none;position:fixed;inset:0;z-index:300;background:#000;flex-direction:column;align-items:center;touch-action:pan-y}
+#reelsView{display:none;position:fixed;inset:0;z-index:10040;background:#000;flex-direction:column;align-items:center;touch-action:pan-y}
 #reelsView.open{display:flex}
 .rs-scroll{width:100%;height:100vh;height:100dvh;overflow-y:scroll;scroll-snap-type:y mandatory;scrollbar-width:none;touch-action:pan-y}
 .rs-scroll::-webkit-scrollbar{display:none}
@@ -2513,18 +2513,35 @@ async function toggleFollowUser(targetUid, targetName, btn) {
   let follows = [];
   try { follows = JSON.parse(localStorage.getItem('cp_follows') || '[]'); } catch(e) {}
   const key = targetName || targetUid;
-  const isFollowing = follows.includes(key);
+  const isFollowing = follows.includes(key) || follows.includes(targetUid);
   if (isFollowing) {
-    follows = follows.filter(x => x !== key);
+    follows = follows.filter(x => x !== key && x !== targetUid && x !== targetName);
     if (btn) { btn.classList.remove('on'); btn.textContent = 'Follow'; }
     toast('Unfollowed');
+    // Hide bell when unfollow
+    const bellBtn = document.getElementById('bellBtn');
+    if (bellBtn) bellBtn.style.display = 'none';
   } else {
-    follows.push(key);
+    if (targetName) follows.push(targetName);
+    if (targetUid && !follows.includes(targetUid)) follows.push(targetUid);
     if (btn) { btn.classList.add('on'); btn.textContent = 'Following'; }
     toast('✅ Following!');
+    const bellBtn = document.getElementById('bellBtn');
+    if (bellBtn) {
+      bellBtn.style.display = 'flex';
+      bellBtn.style.alignItems = 'center';
+      bellBtn.style.justifyContent = 'center';
+      bellBtn.textContent = '🔔';
+      bellBtn.style.background = '#fff';
+      bellBtn.style.borderColor = '#ec4899';
+    }
   }
   localStorage.setItem('cp_follows', JSON.stringify(follows));
-  if (!db) return;
+  if (!db) {
+    // Local-only bump
+    _bumpFollowerDisplay(targetUid, targetName, !isFollowing);
+    return;
+  }
   try {
     const meRef = db.collection('users').doc(String(uid));
     const followId = String(targetUid || targetName).replace(/[\/\.\#\$\[\]]/g, '_');
@@ -2536,7 +2553,12 @@ async function toggleFollowUser(targetUid, targetName, btn) {
         await db.collection('users').doc(String(targetUid)).collection('followers').doc(String(uid)).set({
           uid, name: _engName(), at: new Date().toISOString()
         });
-        // notify
+        // Store count on user doc
+        try {
+          const FV = firebase.firestore.FieldValue;
+          await db.collection('users').doc(String(targetUid)).set({ followersCount: FV.increment(1) }, { merge: true });
+          await db.collection('users').doc(String(uid)).set({ followingCount: FV.increment(1) }, { merge: true });
+        } catch(e) {}
         try {
           await db.collection('notifications').add({
             toUserId: targetUid, fromUserId: uid, fromName: _engName(),
@@ -2547,10 +2569,69 @@ async function toggleFollowUser(targetUid, targetName, btn) {
       }
     } else {
       await meRef.collection('following').doc(followId).delete().catch(()=>{});
-      if (targetUid) await db.collection('users').doc(String(targetUid)).collection('followers').doc(String(uid)).delete().catch(()=>{});
+      if (targetUid) {
+        await db.collection('users').doc(String(targetUid)).collection('followers').doc(String(uid)).delete().catch(()=>{});
+        try {
+          const FV = firebase.firestore.FieldValue;
+          await db.collection('users').doc(String(targetUid)).set({ followersCount: FV.increment(-1) }, { merge: true });
+          await db.collection('users').doc(String(uid)).set({ followingCount: FV.increment(-1) }, { merge: true });
+        } catch(e) {}
+      }
     }
-  } catch(e) { console.log('follow sync', e.message); }
+    // Refresh real count into UI
+    await refreshFollowerCountUI(targetUid, targetName);
+  } catch(e) { console.log('follow sync', e.message); _bumpFollowerDisplay(targetUid, targetName, !isFollowing); }
 }
+function _bumpFollowerDisplay(targetUid, targetName, inc) {
+  PIN_DATA.forEach(p => {
+    if (!p.user) return;
+    const match = (targetUid && p.firestoreUserId === targetUid) ||
+      (targetName && (p.user.name || '').toLowerCase() === String(targetName).toLowerCase());
+    if (!match) return;
+    let n = parseInt(String(p.user.followers || '0').replace(/[^\d]/g, ''), 10) || 0;
+    n = Math.max(0, n + (inc ? 1 : -1));
+    p.user.followers = (typeof _fmtCount === 'function') ? _fmtCount(n) : String(n);
+  });
+  const el = document.getElementById('detailUserFol');
+  if (el) {
+    const p = PIN_DATA.find(x => x.id == openPinId || String(x.id) === String(openPinId));
+    if (p && p.user) el.textContent = (p.user.followers || '0') + ' followers';
+  }
+  const pf = document.getElementById('profileFollowers');
+  if (pf) {
+    let n = parseInt(String(pf.textContent || '0').replace(/[^\d]/g, ''), 10) || 0;
+    n = Math.max(0, n + (inc ? 1 : -1));
+    pf.textContent = (typeof _fmtCount === 'function') ? _fmtCount(n) : String(n);
+  }
+}
+async function refreshFollowerCountUI(targetUid, targetName) {
+  if (!db || !targetUid) {
+    _bumpFollowerDisplay(targetUid, targetName, true);
+    return;
+  }
+  try {
+    const snap = await db.collection('users').doc(String(targetUid)).collection('followers').get();
+    const n = snap.size;
+    const label = (typeof _fmtCount === 'function') ? _fmtCount(n) : String(n);
+    PIN_DATA.forEach(p => {
+      if (p.firestoreUserId === targetUid || (targetName && p.user && (p.user.name || '').toLowerCase() === String(targetName).toLowerCase())) {
+        p.user.followers = label;
+      }
+    });
+    try {
+      await db.collection('users').doc(String(targetUid)).set({ followersCount: n }, { merge: true });
+    } catch(e) {}
+    const el = document.getElementById('detailUserFol');
+    if (el) {
+      const p = PIN_DATA.find(x => x.id == openPinId || String(x.id) === String(openPinId));
+      if (p && p.firestoreUserId === targetUid) el.textContent = label + ' followers';
+    }
+  } catch(e) {
+    console.log('refresh followers', e.message);
+  }
+}
+
+
 
 
 
@@ -3299,11 +3380,15 @@ function tgSave(e,id){e.stopPropagation();if(navigator.vibrate)navigator.vibrate
 
 // ─── DETAIL ───
 function openDetail(id){
-  _hardStopAllVideos();
   // Flexible id match (number / string from profile / Firestore)
   const p0 = PIN_DATA.find(x => x.id == id || String(x.id) === String(id));
   if(!p0){ toast('⚠️ Post not found'); return; }
   id = p0.id;
+  // Profile page band karo warna reels/detail peeche reh jaati hai (audio sunai de, video nahi)
+  try {
+    const pp = document.getElementById('profilePage');
+    if (pp && pp.classList.contains('open') && typeof closeUserProfile === 'function') closeUserProfile();
+  } catch(e) {}
   // Normalize: if type says video/reel but vid empty, recover play URL from src
   const _looksVideoUrl = (u) => {
     if (!u || typeof u !== 'string') return false;
@@ -3318,7 +3403,7 @@ function openDetail(id){
     if (!p0.type || p0.type === 'image') p0.type = 'video';
   }
   // ✅ SMART ROUTING — type + duration
-  if (p0.type === 'reel') {
+  if (p0.type === 'reel' || (p0.type === 'video' && p0.vid && (!(typeof p0._duration === 'number') || p0._duration <= 60))) {
     closeDetail();
     openReels(new Event('x'), id);
     return;
@@ -3328,6 +3413,7 @@ function openDetail(id){
     openReels(new Event('x'), id);
     return;
   }
+  _hardStopAllVideos();
   pushHistory('detail_' + id);
   if (typeof pauseAllGridVideos === 'function') pauseAllGridVideos();
   if (typeof _stopGridObserver === 'function') _stopGridObserver();
@@ -3385,6 +3471,10 @@ function openDetail(id){
   if(document.getElementById('detailUserImg'))document.getElementById('detailUserImg').src=p.user.avatar;
   document.getElementById('detailUserName').textContent=p.user.name;
   document.getElementById('detailUserFol').textContent=(p.user.followers||'0')+' followers';
+  // Real follower count from Firestore
+  if (p.firestoreUserId && typeof refreshFollowerCountUI === 'function') {
+    refreshFollowerCountUI(p.firestoreUserId, p.user && p.user.name).catch(()=>{});
+  }
   const sb=document.getElementById('detailSaveBtn');
   if(sb){sb.innerHTML=savedSet.has(id)?'✔ Saved':'🔖 Save';}
 
@@ -3392,7 +3482,7 @@ function openDetail(id){
   const followBtn = document.getElementById('followBtn');
   const bellBtn = document.getElementById('bellBtn');
   const follows = JSON.parse(localStorage.getItem('cp_follows') || '[]');
-  const isFollowing = follows.includes(p.user.name);
+  const isFollowing = follows.includes(p.user.name) || (p.firestoreUserId && follows.includes(p.firestoreUserId));
   if (followBtn) {
     followBtn.classList.toggle('on', isFollowing);
     followBtn.textContent = isFollowing ? 'Following' : 'Follow';
@@ -3788,12 +3878,34 @@ function handleFollow(btn) {
 
 
 function toggleBellNotif(btn) {
-  const isOn = btn.textContent === '🔔';
-  btn.textContent = isOn ? '🔕' : '🔔';
-  btn.style.background = isOn ? '#f4f4f5' : '#fff';
-  btn.style.borderColor = isOn ? 'var(--border)' : '#ec4899';
-  btn.style.boxShadow = isOn ? 'none' : '0 2px 8px rgba(236,72,153,.25)';
-  toast(isOn ? '🔕 Notifications off' : '🔔 Notifications on');
+  if (!btn) return;
+  const isOn = btn.textContent === '🔔' || btn.dataset.on === '1';
+  if (isOn) {
+    btn.textContent = '🔕';
+    btn.dataset.on = '0';
+    btn.style.background = '#f4f4f5';
+    btn.style.borderColor = '#ddd';
+    btn.style.boxShadow = 'none';
+    toast('🔕 Notifications off');
+  } else {
+    btn.textContent = '🔔';
+    btn.dataset.on = '1';
+    btn.style.background = '#fff';
+    btn.style.borderColor = '#ec4899';
+    btn.style.boxShadow = '0 2px 8px rgba(236,72,153,.25)';
+    toast('🔔 Notifications on');
+    if (typeof saveFollowNotification === 'function') {
+      try { saveFollowNotification(); } catch(e) {}
+    }
+  }
+  // Persist preference
+  try {
+    const p = PIN_DATA.find(x => x.id == openPinId || String(x.id) === String(openPinId));
+    if (p) {
+      const key = 'cp_bell_' + (p.firestoreUserId || p.user && p.user.name || '');
+      localStorage.setItem(key, isOn ? '0' : '1');
+    }
+  } catch(e) {}
 }
 
 async function saveFollowNotification() {
@@ -3869,6 +3981,10 @@ async function deletePin(e, id) {
 }
 function openReels(e,startId){
   if(e&&e.stopPropagation)e.stopPropagation();
+  try {
+    const pp = document.getElementById('profilePage');
+    if (pp && pp.classList.contains('open') && typeof closeUserProfile === 'function') closeUserProfile();
+  } catch(err) {}
   _hardStopAllVideos();
   window._reelsAutoMuteNotified = false; // ✅ har naye reels session mein ek baar hint dikhane ke liye reset
   // ✅ FIX: grid ke background videos ko pause kar do taaki wo fullscreen ke
@@ -4002,6 +4118,11 @@ function _playReelVideo(vid) {
   _pauseAllOtherReelVideos(vid);
   _unloadFarReelVideos(vid);
   _ensureReelVideoSrc(vid);
+  // Always visible — never leave audio-only black screen
+  vid.style.opacity = '1';
+  vid.style.visibility = 'visible';
+  vid.style.display = 'block';
+  vid.style.zIndex = '2';
   // Sound: respect user choice after they unmuted once; autoplay still needs muted first time
   const wantSound = window._reelsMuted === false;
   vid.volume = 1;
@@ -4058,7 +4179,7 @@ function buildReelsView(reels, startId){
     return `
     <div class="rs-slide" id="rss${p.id}" data-reel-idx="${i}">
       <div class="rs-bg" style="${bg}"></div>
-      ${vidUrl?`<video class="rs-video" id="rsv${p.id}" ${dataSrc} ${srcAttr} ${posterAttr} loop playsinline webkit-playsinline disablePictureInPicture disableRemotePlayback preload="${near?'auto':'none'}" onclick="toggleReelPlay(${p.id})" style="opacity:${near?1:0}"></video>`
+      ${vidUrl?`<video class="rs-video" id="rsv${p.id}" ${dataSrc} ${srcAttr} ${posterAttr} loop playsinline webkit-playsinline disablePictureInPicture disableRemotePlayback preload="${near?'auto':'none'}" onclick="toggleReelPlay(${p.id})" style="opacity:1"></video>`
               :`<img class="rs-thumb" src="${poster||''}" loading="${i<3?'eager':'lazy'}">`}
       <div class="rs-ov"></div>
       <div class="rs-pause-ic"><span>⏸️</span></div>
@@ -4077,7 +4198,7 @@ function buildReelsView(reels, startId){
         <div class="rs-tags"><span class="rs-tag">#${p.cat||'Showfy'}</span><span class="rs-tag">#Showfy</span></div>
       </div>
       <div class="rs-actions">
-        <button class="rs-act" data-liked="${(likedSet.has(p.id)||likedSet.has(String(p.id)))?'1':'0'}" onclick="tgReelLike(this,${JSON.stringify(p.id)})">
+        <button class="rs-act" data-liked="${(likedSet.has(p.id)||likedSet.has(String(p.id)))?'1':'0'}" onclick="event.stopPropagation();tgReelLike(this,${JSON.stringify(p.id)},event)">
           <div class="rs-act-ic" id="rlc${p.id}">${(likedSet.has(p.id)||likedSet.has(String(p.id)))?'❤️':'🤍'}</div>
           <span class="rs-act-lbl" id="rln${p.id}">${(typeof _fmtCount==='function'?_fmtCount(p.likes||0):(p.likes||0))}</span>
         </button>
@@ -4085,8 +4206,8 @@ function buildReelsView(reels, startId){
           <div class="rs-act-ic">💬</div>
           <span class="rs-act-lbl" id="rcc${p.id}">${(commentsDB[p.id]||commentsDB[p.firestoreId]||[]).length||0}</span>
         </button>
-        <button class="rs-act" onclick="openShareFor(event,${JSON.stringify(p.id)})"><div class="rs-act-ic">📤</div><span class="rs-act-lbl">Share</span></button>
-        <button class="rs-act" id="muteBtn${p.id}" onclick="toggleReelMute(event,${JSON.stringify(p.id)})"><div class="rs-act-ic">${window._reelsMuted?'🔇':'🔊'}</div></button>
+        <button class="rs-act" onclick="event.stopPropagation();openShareFor(event,${JSON.stringify(p.id)})"><div class="rs-act-ic">📤</div><span class="rs-act-lbl">Share</span></button>
+        <button class="rs-act" id="muteBtn${p.id}" onclick="event.stopPropagation();toggleReelMute(event,${JSON.stringify(p.id)})"><div class="rs-act-ic">${window._reelsMuted?'🔇':'🔊'}</div></button>
         <button class="rs-act" onclick="toggleReelMoreMenu(event,${p.id})"><div class="rs-act-ic">⋯</div></button>
         <div class="rs-more-menu" id="rsMoreMenu${p.id}" style="display:none;position:absolute;right:54px;bottom:0;background:#1c1c1e;border-radius:14px;overflow:hidden;min-width:160px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:60">
           <button onclick="tgSave(new Event('x'),${p.id});toggleReelMoreMenu(event,${p.id})" style="width:100%;text-align:left;background:none;border:none;padding:13px 16px;font-size:13px;font-weight:600;color:#fff;cursor:pointer;display:flex;align-items:center;gap:10px">🔖 Save</button>
@@ -4122,8 +4243,8 @@ function buildReelsView(reels, startId){
           }
         } catch(err){}
         try { vid.pause(); } catch(err){}
-        // Do NOT reset currentTime to 0 here — causes wrong poster flash
-        vid.style.opacity = '0';
+        // Keep element visible (poster/frame) — no black flash / audio-only bug
+        vid.style.opacity = '1';
       }
     });
   }, { threshold: [0.55, 0.75], rootMargin: '20% 0px' });
@@ -4193,9 +4314,13 @@ document.addEventListener('click', function(e){
     document.querySelectorAll('.rs-more-menu').forEach(m=>m.style.display='none');
   }
 });
-function tgReelLike(btn,id){
+function tgReelLike(btn,id,evt){
+  if (evt && evt.stopPropagation) evt.stopPropagation();
+  if (evt && evt.preventDefault) evt.preventDefault();
+  // Don't pause the playing reel — only update like state
   const p=PIN_DATA.find(x=>x.id==id||String(x.id)===String(id));if(!p)return;
-  const ic=document.getElementById('rlc'+id),cnt=document.getElementById('rln'+id);
+  const ic=document.getElementById('rlc'+id)||document.getElementById('rlc'+p.id);
+  const cnt=document.getElementById('rln'+id)||document.getElementById('rln'+p.id);
   if(navigator.vibrate)navigator.vibrate([15]);
   if(btn.dataset.liked==='1' || likedSet.has(id) || likedSet.has(p.id)){
     btn.dataset.liked='0';
