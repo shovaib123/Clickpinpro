@@ -1836,6 +1836,191 @@ let pinNotes = JSON.parse(localStorage.getItem('cp_pin_notes') || '{}');
 // ── AFFILIATE POSTS (user ke daale hue) ──
 let AFFILIATE_POSTS = JSON.parse(localStorage.getItem('cp_affiliate_posts') || '[]');
 
+// ✅ FREE: pehle 3 affiliate ads free; uske baad ₹199/month = 30 ads
+const FREE_AFFILIATE_LIMIT = 3;
+const AFF_PRO_PRICE = 199;          // ₹ per month
+const AFF_PRO_MONTHLY_ADS = 30;     // ads per paid month
+const AFF_PRO_DAYS = 30;
+
+function _affMyName() {
+  return (typeof myClickPinName !== 'undefined' && myClickPinName
+    ? myClickPinName
+    : (localStorage.getItem('cp_user_name') || '')).toLowerCase().trim();
+}
+function _affMonthKey() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+function getMyAffiliateCount() {
+  const my = _affMyName();
+  const stored = parseInt(localStorage.getItem('cp_aff_count_' + (my || 'anon')) || '0', 10) || 0;
+  const fromPosts = AFFILIATE_POSTS.filter(a => {
+    const n = (a.user && a.user.name) ? a.user.name.toLowerCase().trim() : '';
+    return my && n === my;
+  }).length;
+  return Math.max(stored, fromPosts);
+}
+function getProMonthlyUsed() {
+  const my = _affMyName() || 'anon';
+  const key = 'cp_aff_pro_used_' + my + '_' + _affMonthKey();
+  return parseInt(localStorage.getItem(key) || '0', 10) || 0;
+}
+function isAffiliatePremium() {
+  try {
+    const exp = parseInt(localStorage.getItem('cp_aff_premium_until') || '0', 10);
+    if (exp && exp > Date.now()) return true;
+    if (exp && exp <= Date.now()) {
+      localStorage.removeItem('cp_aff_premium');
+      localStorage.removeItem('cp_aff_premium_until');
+    }
+    // legacy flag without expiry — treat as expired unless until is set
+    if (localStorage.getItem('cp_aff_premium') === '1' && !exp) {
+      localStorage.removeItem('cp_aff_premium');
+    }
+  } catch(e) {}
+  return false;
+}
+function canPostAffiliateAd() {
+  if (isAffiliatePremium()) {
+    const used = getProMonthlyUsed();
+    const remaining = Math.max(0, AFF_PRO_MONTHLY_ADS - used);
+    return { ok: remaining > 0, remaining, premium: true, used, limit: AFF_PRO_MONTHLY_ADS };
+  }
+  const used = getMyAffiliateCount();
+  const remaining = Math.max(0, FREE_AFFILIATE_LIMIT - used);
+  return { ok: remaining > 0, remaining, premium: false, used, limit: FREE_AFFILIATE_LIMIT };
+}
+function incrementAffiliateCount() {
+  const my = _affMyName() || 'anon';
+  if (isAffiliatePremium()) {
+    const key = 'cp_aff_pro_used_' + my + '_' + _affMonthKey();
+    const next = getProMonthlyUsed() + 1;
+    try { localStorage.setItem(key, String(next)); } catch(e) {}
+    return next;
+  }
+  const next = getMyAffiliateCount() + 1;
+  try { localStorage.setItem('cp_aff_count_' + my, String(next)); } catch(e) {}
+  return next;
+}
+function activateAffiliatePremium(days) {
+  days = days || AFF_PRO_DAYS;
+  const until = Date.now() + days * 24 * 60 * 60 * 1000;
+  localStorage.setItem('cp_aff_premium', '1');
+  localStorage.setItem('cp_aff_premium_until', String(until));
+  // New billing month counter starts fresh
+  const my = _affMyName() || 'anon';
+  try { localStorage.setItem('cp_aff_pro_used_' + my + '_' + _affMonthKey(), '0'); } catch(e) {}
+  toast('✅ Affiliate Pro active — ₹' + AFF_PRO_PRICE + '/month · ' + AFF_PRO_MONTHLY_ADS + ' ads');
+}
+function startAffiliatePayment(method) {
+  // UI selection — real gateway (Razorpay etc.) baad me yahin hook hoga
+  const names = {
+    upi: 'UPI',
+    phonepe: 'PhonePe',
+    gpay: 'Google Pay',
+    visa: 'Visa',
+    mastercard: 'Mastercard'
+  };
+  const label = names[method] || 'UPI';
+  // Highlight selected
+  document.querySelectorAll('.aff-pay-opt').forEach(b => {
+    b.style.borderColor = '#e5e5e5';
+    b.style.background = '#fafafa';
+  });
+  const btn = document.getElementById('affPay_' + method);
+  if (btn) {
+    btn.style.borderColor = '#ff9f00';
+    btn.style.background = '#fff8f0';
+  }
+  const payBtn = document.getElementById('affPayConfirmBtn');
+  if (payBtn) {
+    payBtn.disabled = false;
+    payBtn.dataset.method = method;
+    payBtn.textContent = 'Pay ₹' + AFF_PRO_PRICE + ' via ' + label;
+  }
+}
+function confirmAffiliatePayment() {
+  const payBtn = document.getElementById('affPayConfirmBtn');
+  const method = (payBtn && payBtn.dataset.method) || 'upi';
+  if (!method) {
+    toast('⚠️ Pehle payment method choose karo');
+    return;
+  }
+  // Demo: payment success simulate — production me Razorpay/PhonePe SDK yahan
+  if (payBtn) {
+    payBtn.disabled = true;
+    payBtn.textContent = '⏳ Processing...';
+  }
+  setTimeout(() => {
+    activateAffiliatePremium(AFF_PRO_DAYS);
+    closeAffiliateSubscribeModal();
+    openAffiliateModal();
+    toast('✅ Payment successful (' + method + ')');
+  }, 600);
+}
+function openAffiliateSubscribeModal() {
+  closeAffiliateModal();
+  let m = document.getElementById('affSubModal');
+  if (m) m.remove();
+  m = document.createElement('div');
+  m.id = 'affSubModal';
+  m.style.cssText = 'display:flex;position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.65);backdrop-filter:blur(8px);align-items:center;justify-content:center;padding:16px';
+  m.onclick = function(e){ if(e.target===m) closeAffiliateSubscribeModal(); };
+  const used = getMyAffiliateCount();
+  m.innerHTML = `
+    <div style="background:#fff;border-radius:24px;width:100%;max-width:400px;padding:26px 22px;position:relative;max-height:92vh;overflow-y:auto;animation:popIn .25s ease">
+      <button onclick="closeAffiliateSubscribeModal()" style="position:absolute;top:14px;right:14px;background:#f0f0f0;border:none;width:32px;height:32px;border-radius:50%;font-size:16px;cursor:pointer">✕</button>
+      <div style="text-align:center;margin-bottom:14px">
+        <div style="font-size:40px;margin-bottom:6px">🛍️</div>
+        <h2 style="font-family:var(--font-display);font-size:20px;font-weight:900;color:#111;margin:0 0 6px">Affiliate Pro</h2>
+        <p style="font-size:13px;color:#666;margin:0;line-height:1.45">
+          Free: <b>${used}/${FREE_AFFILIATE_LIMIT} ads</b> use ho chuke.<br>
+          Pro: <b>₹${AFF_PRO_PRICE}/month</b> · <b>${AFF_PRO_MONTHLY_ADS} ads</b> har mahine
+        </p>
+      </div>
+      <div style="background:linear-gradient(135deg,#fff8f0,#ffe8cc);border-radius:16px;padding:14px;margin-bottom:14px;border:1.5px solid #ffd59a">
+        <div style="display:flex;align-items:baseline;justify-content:center;gap:6px;margin-bottom:8px">
+          <span style="font-size:28px;font-weight:900;color:#c2410c">₹${AFF_PRO_PRICE}</span>
+          <span style="font-size:13px;color:#9a3412">/ month</span>
+        </div>
+        <ul style="margin:0;padding-left:18px;font-size:13px;color:#333;line-height:1.7">
+          <li><b>${AFF_PRO_MONTHLY_ADS} affiliate ads</b> every month</li>
+          <li>Amazon, Flipkart, Meesho, Myntra & more</li>
+          <li>Cancel anytime · auto month cycle</li>
+        </ul>
+      </div>
+      <div style="font-size:12px;font-weight:800;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px">Payment options</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+        <button type="button" class="aff-pay-opt" id="affPay_upi" onclick="startAffiliatePayment('upi')" style="border:1.5px solid #e5e5e5;background:#fafafa;border-radius:12px;padding:12px 8px;cursor:pointer;font-size:12px;font-weight:700;color:#222">📱 UPI</button>
+        <button type="button" class="aff-pay-opt" id="affPay_phonepe" onclick="startAffiliatePayment('phonepe')" style="border:1.5px solid #e5e5e5;background:#fafafa;border-radius:12px;padding:12px 8px;cursor:pointer;font-size:12px;font-weight:700;color:#222">💜 PhonePe</button>
+        <button type="button" class="aff-pay-opt" id="affPay_gpay" onclick="startAffiliatePayment('gpay')" style="border:1.5px solid #e5e5e5;background:#fafafa;border-radius:12px;padding:12px 8px;cursor:pointer;font-size:12px;font-weight:700;color:#222">🔵 Google Pay</button>
+        <button type="button" class="aff-pay-opt" id="affPay_visa" onclick="startAffiliatePayment('visa')" style="border:1.5px solid #e5e5e5;background:#fafafa;border-radius:12px;padding:12px 8px;cursor:pointer;font-size:12px;font-weight:700;color:#222">💳 Visa</button>
+        <button type="button" class="aff-pay-opt" id="affPay_mastercard" onclick="startAffiliatePayment('mastercard')" style="border:1.5px solid #e5e5e5;background:#fafafa;border-radius:12px;padding:12px 8px;cursor:pointer;font-size:12px;font-weight:700;color:#222;grid-column:1/-1">💳 Mastercard</button>
+      </div>
+      <button id="affPayConfirmBtn" onclick="confirmAffiliatePayment()" disabled style="width:100%;background:linear-gradient(135deg,#ff9f00,#ff6b00);color:#fff;border:none;padding:14px;border-radius:24px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:8px;opacity:.55">Pehle payment method choose karo</button>
+      <p style="text-align:center;font-size:11px;color:#999;margin:0;line-height:1.4">Secure payment · UPI · PhonePe · Google Pay · Visa · Mastercard<br>Gateway live hone par yahi se pay hoga</p>
+    </div>`;
+  document.body.appendChild(m);
+}
+function closeAffiliateSubscribeModal() {
+  const m = document.getElementById('affSubModal');
+  if (m) m.style.display = 'none';
+}
+function updateAffFreeBadge() {
+  const el = document.getElementById('affFreeBadge');
+  if (!el) return;
+  const st = canPostAffiliateAd();
+  if (st.premium) {
+    el.textContent = '✅ Pro — ' + st.remaining + ' / ' + AFF_PRO_MONTHLY_ADS + ' ads left this month';
+    el.style.background = st.remaining > 0 ? 'rgba(22,163,74,.12)' : 'rgba(230,0,35,.1)';
+    el.style.color = st.remaining > 0 ? '#16a34a' : '#e60023';
+  } else {
+    el.textContent = '🎁 Free ads left: ' + st.remaining + ' / ' + FREE_AFFILIATE_LIMIT;
+    el.style.background = st.remaining > 0 ? 'rgba(255,159,0,.12)' : 'rgba(230,0,35,.1)';
+    el.style.color = st.remaining > 0 ? '#c2410c' : '#e60023';
+  }
+}
+
 const SPONSORED_ADS = [
   { img:'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=500', brand:'Nike India', title:'Air Max Collection 2025 — Ab India mein', cta:'Shop Now', link:'#' },
   { img:'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500', brand:'Fastrack', title:'Naye Watches — Flat 40% Off Today', cta:'Buy Now', link:'#' },
@@ -1921,21 +2106,16 @@ function openAffiliateModal() {
     toast('🚫 Your affiliate access is temporarily restricted due to a copyright report. Contact support.');
     return;
   }
-  // ✅ Daily limit check — warn early before user fills the form
-  const DAILY_AFF_LIMIT = 3;
-  const todayStart = new Date();
-  todayStart.setHours(0,0,0,0);
-  const myNameForLimit = (myClickPinName || localStorage.getItem('cp_user_name') || '').toLowerCase().trim();
-  const todaysCount = AFFILIATE_POSTS.filter(a => {
-    const isMine = a.user && a.user.name && a.user.name.toLowerCase().trim() === myNameForLimit;
-    return isMine && (a.addedAt || 0) >= todayStart.getTime();
-  }).length;
-  if (todaysCount >= DAILY_AFF_LIMIT) {
-    toast(`⚠️ Daily limit reached! You've already posted ${DAILY_AFF_LIMIT} affiliate products today. Try again tomorrow.`);
+  // ✅ 3 free ads, phir subscription
+  const st = canPostAffiliateAd();
+  if (!st.ok) {
+    toast('⚠️ Free limit (3 ads) khatam! Subscribe karke unlimited post karo.');
+    openAffiliateSubscribeModal();
     return;
   }
   const el = document.getElementById('affiliateModal');
   if(el) el.classList.add('open');
+  setTimeout(updateAffFreeBadge, 50);
 }
 function closeAffiliateModal() {
   const el = document.getElementById('affiliateModal');
@@ -2022,18 +2202,11 @@ async function affSubmitPost() {
   if(!url || !url.startsWith('http')) { toast('⚠️ Product link is required!'); return; }
   if(!title) { toast('⚠️ Please enter the product name!'); return; }
 
-  // ✅ DAILY LIMIT — max 5 affiliate posts per day per user
-  const DAILY_AFF_LIMIT = 3;
-  const todayStart = new Date();
-  todayStart.setHours(0,0,0,0);
-  const todayStartMs = todayStart.getTime();
-  const myNameForLimit = (myClickPinName || localStorage.getItem('cp_user_name') || '').toLowerCase().trim();
-  const todaysCount = AFFILIATE_POSTS.filter(a => {
-    const isMine = a.user && a.user.name && a.user.name.toLowerCase().trim() === myNameForLimit;
-    return isMine && (a.addedAt || 0) >= todayStartMs;
-  }).length;
-  if (todaysCount >= DAILY_AFF_LIMIT) {
-    toast(`⚠️ Daily limit reached! You can post max ${DAILY_AFF_LIMIT} affiliate products per day. Try again tomorrow.`);
+  // ✅ FREE LIMIT — 3 ads free, phir subscription
+  const stLimit = canPostAffiliateAd();
+  if (!stLimit.ok) {
+    toast('⚠️ Free limit (3 ads) khatam! Subscribe karke unlimited post karo.');
+    openAffiliateSubscribeModal();
     return;
   }
 
@@ -2090,7 +2263,14 @@ async function affSubmitPost() {
   if(btn){ btn.textContent='🚀 Post to Feed'; btn.disabled=false; }
   closeAffiliateModal();
   applyFilters();
+  incrementAffiliateCount();
+  updateAffFreeBadge();
   toast('✅ Affiliate post feed mein aa gaya! 🛍️');
+  const _left = canPostAffiliateAd();
+  if (!_left.ok) {
+    if (_left.premium) setTimeout(() => toast('ℹ️ Is mahine ki 30 ads khatam — next month ya renew'), 1200);
+    else setTimeout(() => toast('ℹ️ Free ads khatam — ₹199/month me 30 ads'), 1200);
+  }
 }
 
 function affAutoDetect(url) {
@@ -2609,14 +2789,22 @@ function filterCat(c){
 // upload hote hi turant sahi thumbnail dikhe, bina video khole/wapas aaye.
 function _retryThumbLoad(imgEl, attempt){
   attempt = attempt || 1;
-  if (attempt > 5) return; // 5 attempts ke baad give up (kuch aur hi galat hai)
-  const delay = attempt * 2000; // 2s, 4s, 6s, 8s, 10s
+  if (attempt > 8) return; // Bunny encode ke liye zyada time do
+  const delay = Math.min(attempt * 2500, 15000); // 2.5s … max 15s between tries
   setTimeout(() => {
-    if (!imgEl || !imgEl.isConnected) return; // element hata diya gaya ho to skip
-    const base = imgEl.getAttribute('data-thumb-base') || imgEl.src.split('?')[0];
+    if (!imgEl || !imgEl.isConnected) return;
+    let base = imgEl.getAttribute('data-thumb-base') || (imgEl.src || '').split('?')[0];
+    // Agar src empty/broken hai to video URL se Bunny thumb try karo
+    if ((!base || base === 'undefined' || base === 'null') && imgEl.getAttribute('data-vid-url')) {
+      const vu = imgEl.getAttribute('data-vid-url');
+      const gm = vu.match(/https?:\/\/([a-z0-9\-]+\.b-cdn\.net)\/([a-f0-9\-]+)\//i);
+      if (gm) base = `https://${gm[1]}/${gm[2]}/thumbnail.jpg`;
+    }
+    if (!base) return;
     imgEl.setAttribute('data-thumb-base', base);
     imgEl.onerror = () => _retryThumbLoad(imgEl, attempt + 1);
-    imgEl.src = base + '?r=' + Date.now();
+    imgEl.onload = () => { imgEl.style.display = 'block'; imgEl.style.opacity = '1'; };
+    imgEl.src = base + (base.includes('?') ? '&' : '?') + 'r=' + Date.now();
     imgEl.style.display = 'block';
   }, delay);
 }
@@ -2781,7 +2969,7 @@ function _realBuildGrid(list){
       }
       const reelThumbId = `rthumb${p.id}`;
       media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">
-        <img class="reel-thumb" id="${reelThumbId}" src="${thumbSrc}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:${thumbSrc?'block':'none'}" onerror="this.style.display='none';_retryThumbLoad(this)">
+        <img class="reel-thumb" id="${reelThumbId}" src="${thumbSrc||''}" alt="${p.title}" loading="lazy" decoding="async" data-vid-url="${vidSrc}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:${thumbSrc?'block':'none'}" onerror="_retryThumbLoad(this)" onload="this.style.display='block'">
         <video id="rv${p.id}" ${isReelBlob?`src="${vidSrc}"`:`data-src="${vidSrc}"`} muted loop playsinline disablePictureInPicture disableRemotePlayback preload="${isReelBlob?'metadata':'none'}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0" ${isReelBlob?`onloadeddata="captureBlobThumb(this,document.getElementById('${reelThumbId}'),${p.id})"`:''}></video>
         <div class="reel-badge">🎬 Reel</div>
         <div class="reel-dur">▶ ${_pinDurLabel(p)}</div>
@@ -2809,7 +2997,7 @@ function _realBuildGrid(list){
       const vidThumbId = `vthumb${p.id}`;
       media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)">
         <video id="rv${p.id}" ${isVidBlob?`src="${vidSrc}"`:`data-src="${vidSrc}"`} muted loop playsinline disablePictureInPicture disableRemotePlayback preload="${isVidBlob?'metadata':'none'}" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0" ${isVidBlob?`onloadeddata="captureBlobThumb(this,document.getElementById('${vidThumbId}'),${p.id})"`:''}></video>
-        <img class="vid-thumb" id="${vidThumbId}" src="${vThumb}" style="height:${imgH}px;width:100%;object-fit:cover;display:${vThumb?'block':'none'}" alt="${p.title}" loading="lazy" onerror="this.style.display='none';_retryThumbLoad(this)">
+        <img class="vid-thumb" id="${vidThumbId}" src="${vThumb||''}" style="height:${imgH}px;width:100%;object-fit:cover;display:${vThumb?'block':'none'}" alt="${p.title}" loading="lazy" decoding="async" data-vid-url="${vidSrc}" onerror="_retryThumbLoad(this)" onload="this.style.display='block'">
         <div class="video-badge">🎥 Video</div>
         <div class="reel-dur">▶ ${_pinDurLabel(p)}</div>
         <div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div>
@@ -2864,7 +3052,14 @@ function _realBuildGrid(list){
   // posts ek hi column mein chali jaati thi)
   splitGridIntoColumns(el);
   // Hook scroll-based autoplay after render
-  setTimeout(()=>{ observeVideoPins(); refreshDeleteButtons(); },100);
+  setTimeout(()=>{ observeVideoPins(); refreshDeleteButtons();
+  // Black thumbnails: start Bunny retry for any hidden/empty thumbs
+  document.querySelectorAll('.reel-thumb, .vid-thumb').forEach(img => {
+    if (!img.src || img.style.display === 'none' || img.naturalWidth === 0) {
+      _retryThumbLoad(img, 1);
+    }
+  });
+},100);
   } catch(e) { console.error('Grid render error:', e); }
 }
 
@@ -3656,7 +3851,7 @@ function buildReelsView(reels, startId){
           // ✅ NEW (safe, additive-only): ek hi baar batao ki sound kyun band hai
           if (!window._reelsAutoMuteNotified) {
             window._reelsAutoMuteNotified = true;
-            toast('🔊 Sound ke liye speaker icon dabao');
+            toast('🔊 Sound on karne ke liye 🔊 icon dabao');
           }
         });
         _reelSwipeCount++;
@@ -3693,7 +3888,7 @@ function buildReelsView(reels, startId){
       document.querySelectorAll('[id^="muteBtn"] .rs-act-ic').forEach(ic => { ic.textContent = '🔇'; });
       if (!window._reelsAutoMuteNotified) {
         window._reelsAutoMuteNotified = true;
-        toast('🔊 Sound ke liye speaker icon dabao');
+        toast('🔊 Sound on karne ke liye 🔊 icon dabao');
       }
     });}
   },400);
@@ -3701,8 +3896,25 @@ function buildReelsView(reels, startId){
 function toggleReelPlay(id){
   const vid=document.getElementById('rsv'+id),slide=document.getElementById('rss'+id);
   if(!vid)return;
-  if(vid.paused){_pauseAllOtherReelVideos(vid);vid.play().catch(()=>{});slide.classList.remove('paused');}
-  else{vid.pause();slide.classList.add('paused');}
+  if(vid.paused){
+    _pauseAllOtherReelVideos(vid);
+    // User tap = gesture → browser allows sound. Unmute on intentional play.
+    window._reelsMuted = false;
+    vid.muted = false;
+    vid.volume = 1;
+    document.querySelectorAll('[id^="muteBtn"] .rs-act-ic').forEach(ic => { ic.textContent = '🔊'; });
+    vid.play().catch(()=>{
+      // Fallback if still blocked
+      vid.muted = true;
+      window._reelsMuted = true;
+      document.querySelectorAll('[id^="muteBtn"] .rs-act-ic').forEach(ic => { ic.textContent = '🔇'; });
+      vid.play().catch(()=>{});
+    });
+    slide.classList.remove('paused');
+  } else {
+    vid.pause();
+    slide.classList.add('paused');
+  }
 }
 // ✅ Mute/Unmute toggle — sab reels ke liye global state, applies to currently playing video
 window._reelsMuted = false;
@@ -4301,35 +4513,44 @@ async function uploadToR2(file) {
 function captureVideoThumbnail(file) {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
-    video.preload = 'metadata';
+    video.preload = 'auto';
     video.muted = true;
     video.playsInline = true;
+    video.setAttribute('playsinline', '');
     const objectUrl = URL.createObjectURL(file);
     const cleanup = () => { try { URL.revokeObjectURL(objectUrl); } catch(e){} };
-    const timeout = setTimeout(() => { cleanup(); reject(new Error('thumbnail timeout')); }, 8000);
+    // Faster timeout — 4s max, chhoti resolution for speed
+    const timeout = setTimeout(() => { cleanup(); reject(new Error('thumbnail timeout')); }, 4000);
+    let done = false;
+    const finish = (fn) => { if (done) return; done = true; clearTimeout(timeout); cleanup(); fn(); };
 
-    video.onloadedmetadata = () => {
-      video.currentTime = Math.min(0.3, (video.duration || 1) / 2);
-    };
-    video.onseeked = () => {
+    const snap = () => {
       try {
+        const vw = video.videoWidth || 480;
+        const vh = video.videoHeight || 854;
+        // Max width 480 — fast encode, still sharp on mobile grid
+        const scale = Math.min(1, 480 / vw);
         const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth || 400;
-        canvas.height = video.videoHeight || 711;
+        canvas.width = Math.max(1, Math.round(vw * scale));
+        canvas.height = Math.max(1, Math.round(vh * scale));
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-        clearTimeout(timeout);
-        cleanup();
-        resolve(dataUrl);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+        finish(() => resolve(dataUrl));
       } catch (e) {
-        clearTimeout(timeout);
-        cleanup();
-        reject(e);
+        finish(() => reject(e));
       }
     };
-    video.onerror = () => { clearTimeout(timeout); cleanup(); reject(new Error('video load error')); };
+
+    video.onloadeddata = () => {
+      // Prefer first frames (0.05–0.2s) — almost instant
+      const t = Math.min(0.15, Math.max(0.05, (video.duration || 1) * 0.02));
+      try { video.currentTime = t; } catch(e) { snap(); }
+    };
+    video.onseeked = snap;
+    video.onerror = () => finish(() => reject(new Error('video load error')));
     video.src = objectUrl;
+    try { video.load(); } catch(e) {}
   });
 }
 
@@ -4485,40 +4706,35 @@ async function submitPin(){
 
     try {
       if (isVidFile) {
-        // ✅ Videos ab seedha Cloudflare R2 pe upload hote hain (fast, direct)
-        updateUploadPill('📤 Uploading video...', 20);
-        const bunnyResult = await uploadToBunny(fileToUpload);
-        updateUploadPill('⚙️ Saving...', 80);
-        finalVid = bunnyResult.url;
+        // ✅ PARALLEL: video upload + thumbnail capture/upload ek saath — total time ~ max(video, thumb)
+        updateUploadPill('📤 Uploading video + thumbnail...', 15);
 
-        // ✅ FIX: Thumbnail ko bhi R2 pe upload karo taaki asli URL mile —
-        // pehle base64 (data:) URL seedha use hota tha, jo Firestore save
-        // logic jaan-boojh kar skip kar deta hai (bade blobs avoid karne ke
-        // liye). Isse thumbnail refresh ke baad ghayab ho jaata tha aur
-        // pura post bhi disappear ho jaata tha. Ab thumbnail bhi R2 pe
-        // upload hoke ek permanent URL leta hai — Firestore mein sahi save hoga.
-        let thumbDataUrl = customThumbDataUrl;
-        if (!thumbDataUrl) {
-          try {
-            thumbDataUrl = await captureVideoThumbnail(fileToUpload);
-          } catch (thumbErr) {
-            console.log('Thumbnail capture failed:', thumbErr.message);
-            thumbDataUrl = '';
+        // Thumb capture starts immediately (local file, no network)
+        const thumbPromise = (async () => {
+          let thumbDataUrl = customThumbDataUrl;
+          if (!thumbDataUrl) {
+            try { thumbDataUrl = await captureVideoThumbnail(fileToUpload); }
+            catch (e) { console.log('Thumb capture:', e.message); return ''; }
           }
-        }
-        if (thumbDataUrl) {
+          if (!thumbDataUrl) return '';
           try {
             const thumbBlob = dataUrlToBlob(thumbDataUrl);
             const thumbFile = new File([thumbBlob], 'thumb-' + Date.now() + '.jpg', { type: 'image/jpeg' });
             const thumbUpload = await uploadToR2(thumbFile);
-            finalSrc = thumbUpload.url;
-          } catch (thumbUpErr) {
-            console.log('Thumbnail upload failed, using local preview only:', thumbUpErr.message);
-            finalSrc = thumbDataUrl; // is device pe dikhega, refresh ke baad shayad nahi (fallback)
+            return thumbUpload.url || '';
+          } catch (e) {
+            console.log('Thumb upload failed, using data URL preview:', e.message);
+            return thumbDataUrl; // local preview until refresh
           }
-        } else {
-          finalSrc = '';
-        }
+        })();
+
+        const videoPromise = uploadToBunny(fileToUpload);
+
+        // Wait both in parallel
+        const [bunnyResult, thumbUrl] = await Promise.all([videoPromise, thumbPromise]);
+        updateUploadPill('⚙️ Saving...', 85);
+        finalVid = bunnyResult.url;
+        finalSrc = thumbUrl || '';
       } else {
         const bunnyResult = await uploadToBunny(fileToUpload);
         updateUploadPill('⚙️ Saving...', 80);
@@ -4545,6 +4761,11 @@ async function submitPin(){
   // Ab har naye post ko GUARANTEED UNIQUE id milta hai, chahe ek hi
   // millisecond mein kitni bhi baar upload ho.
   const postId = genUniquePostId();
+  // ✅ Optimistic Bunny thumbnail when capture failed — shows after ~10-30s encode
+  if ((!finalSrc || finalSrc.startsWith('data:')) && finalVid && finalVid.includes('b-cdn.net')) {
+    const gm = finalVid.match(/https?:\/\/([a-z0-9\-]+\.b-cdn\.net)\/([a-f0-9\-]+)\//i);
+    if (gm && !finalSrc) finalSrc = `https://${gm[1]}/${gm[2]}/thumbnail.jpg`;
+  }
   const np = {
     id    : postId,
     type  : upType,
@@ -4564,6 +4785,19 @@ async function submitPin(){
 
   // ✅ PEHLE POST DIKHAO — user ko wait mat karao
   PIN_DATA.unshift(np);
+  // ✅ INSTANT local persist — app band/open pe bhi post home pe rahe (Firestore ka wait nahi)
+  try {
+    const httpSrc = (finalSrc && finalSrc.startsWith('http')) ? finalSrc : '';
+    const httpVid = (finalVid && finalVid.startsWith('http')) ? finalVid : '';
+    _saveUserPostLocal({
+      id: np.id, firestoreId: '', type: np.type,
+      src: httpSrc || httpVid, vid: httpVid || null,
+      title: np.title, desc: np.desc, cat: np.cat, likes: 0,
+      userId: '', userName: currentUser.name, userAvatar: (currentUser.avatar||'').startsWith('http') ? currentUser.avatar : '',
+      createdAt: new Date().toISOString()
+    });
+    if (typeof saveFeedCache === 'function') saveFeedCache();
+  } catch(e) {}
   upFile = null;
   upData = null;
   closeUpload();
@@ -4625,15 +4859,15 @@ async function submitPin(){
         np.firestoreId = docRef.id;
         np.firestoreUserId = userId;
 
-        // localStorage backup
+        // localStorage backup (update firestoreId on existing entry)
         try {
-          const saved = JSON.parse(localStorage.getItem('cp_user_posts') || '[]');
-          saved.unshift({ id: np.id, firestoreId: docRef.id, type: np.type,
-            src: effectiveSrc, vid: vidToSave,  // ✅ video URL as src fallback
+          _saveUserPostLocal({ id: np.id, firestoreId: docRef.id, type: np.type,
+            src: (finalSrc && finalSrc.startsWith('http')) ? finalSrc : effectiveSrc,
+            vid: vidToSave,
             title: np.title, desc: np.desc,
             cat: np.cat, likes: 0, userId, userName: currentUser.name,
             userAvatar: avatarToSave, createdAt: new Date().toISOString() });
-          localStorage.setItem('cp_user_posts', JSON.stringify(saved.slice(0, 50)));
+          if (typeof saveFeedCache === 'function') saveFeedCache();
         } catch(le) {}
 
         console.log('✅ Firestore save complete:', docRef.id);
@@ -5133,13 +5367,13 @@ const _lastPinObs = new IntersectionObserver(entries=>{
       const vs = p.vid || p.src || '';
       const rawT = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)/i)) ? p.src : vs;
       const ts = isB64s ? p.src : _thumb(rawT, 400, 711);
-      media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)">${ts?`<img class="reel-thumb" src="${ts}" alt="${p.title}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onerror="this.style.display='none';_retryThumbLoad(this)">`:''}<video id="rv${p.id}" data-src="${vs}" muted loop playsinline disablePictureInPicture disableRemotePlayback preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video><div class="reel-badge">🎬 Reel</div><div class="reel-dur">▶ ${_pinDurLabel(p)}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
+      media=`<div class="pin-reel-wrap" id="rw${p.id}" style="position:relative;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#2d1b4e)"><img class="reel-thumb" src="${ts||''}" alt="${p.title}" loading="lazy" decoding="async" data-vid-url="${vs}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:${ts?'block':'none'}" onerror="_retryThumbLoad(this)" onload="this.style.display='block'"><video id="rv${p.id}" data-src="${vs}" muted loop playsinline disablePictureInPicture disableRemotePlayback preload="none" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0"></video><div class="reel-badge">🎬 Reel</div><div class="reel-dur">▶ ${_pinDurLabel(p)}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
     } else if(p.type==='video'){
       const isB64s2 = p.src && p.src.startsWith('data:');
       const vs2 = p.vid || p.src;
       const rawT2 = (p.src && !p.src.match(/\.(mp4|mov|webm|avi|mkv|m4v|3gp)/i)) ? p.src : vs2;
       const vt = isB64s2 ? p.src : _thumb(rawT2, 400, imgH);
-      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)"><video id="rv${p.id}" data-src="${vs2}" muted loop playsinline disablePictureInPicture disableRemotePlayback preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video>${vt?`<img class="vid-thumb" src="${vt}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" alt="${p.title}" loading="lazy" onerror="this.style.display='none';_retryThumbLoad(this)">`:''}<div class="video-badge">🎥 Video</div><div class="reel-dur">▶ ${_pinDurLabel(p)}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
+      media=`<div class="pin-video-wrap" id="rw${p.id}" style="position:relative;min-height:${imgH}px;background:linear-gradient(135deg,#1a1a2e,#0d1117)"><video id="rv${p.id}" data-src="${vs2}" muted loop playsinline disablePictureInPicture disableRemotePlayback preload="none" style="height:${imgH}px;width:100%;display:block;object-fit:cover;opacity:0;position:absolute;top:0;left:0"></video><img class="vid-thumb" src="${vt||''}" style="height:${imgH}px;width:100%;object-fit:cover;display:${vt?'block':'none'}" alt="${p.title}" loading="lazy" decoding="async" data-vid-url="${vs2}" onerror="_retryThumbLoad(this)" onload="this.style.display='block'"><div class="video-badge">🎥 Video</div><div class="reel-dur">▶ ${_pinDurLabel(p)}</div><div class="vid-play-ic"><div class="vid-play-ic-inner">▶️</div></div></div>`;
     } else {
       const is = isB64s ? p.src : (p.src && p.src.includes('?') ? p.src+'&auto=format&fit=crop&h='+imgH : (p.src||'')+'?auto=format&fit=crop&h='+imgH);
       media=`<div class="pin-img-wrap"><img src="${is}" style="height:${imgH}px;width:100%;object-fit:cover;display:block" loading="lazy" alt="${p.title}" onerror="this.style.background='#f0f0f0'"></div>`;
@@ -7306,12 +7540,103 @@ function closeDetail() {
   if (typeof resyncGridVideos === 'function') setTimeout(resyncGridVideos, 60);
 }
 
+
+// ── FEED CACHE (YouTube/Pinterest jaisa instant homepage) ──
+// App open hote hi local cache se posts dikhao; Firestore background mein sync kare
+function _serializeFeedForCache(list) {
+  try {
+    return (list || []).slice(0, 80).map(p => ({
+      id: p.id,
+      firestoreId: p.firestoreId || '',
+      firestoreUserId: p.firestoreUserId || '',
+      type: p.type || 'image',
+      src: (p.src && String(p.src).startsWith('http')) ? p.src : '',
+      vid: (p.vid && String(p.vid).startsWith('http')) ? p.vid : null,
+      title: p.title || '',
+      desc: (p.desc || '').slice(0, 200),
+      cat: p.cat || 'Home',
+      likes: p.likes || 0,
+      _postTime: p._postTime || p._uploadTime || 0,
+      _duration: p._duration || null,
+      user: {
+        name: (p.user && p.user.name) || 'Showfy User',
+        avatar: (p.user && p.user.avatar && String(p.user.avatar).startsWith('http')) ? p.user.avatar : '',
+        followers: (p.user && p.user.followers) || '0'
+      }
+    })).filter(p => (p.src && p.src.startsWith('http')) || (p.vid && p.vid.startsWith('http')));
+  } catch(e) { return []; }
+}
+function saveFeedCache() {
+  try {
+    const data = _serializeFeedForCache(PIN_DATA);
+    if (data.length) localStorage.setItem('cp_feed_cache', JSON.stringify({ t: Date.now(), posts: data }));
+  } catch(e) {}
+}
+function loadFeedCacheIntoPinData() {
+  try {
+    const raw = localStorage.getItem('cp_feed_cache');
+    if (!raw) return 0;
+    const parsed = JSON.parse(raw);
+    const posts = (parsed && parsed.posts) ? parsed.posts : [];
+    // Cache 7 din se purana ho to skip
+    if (parsed.t && (Date.now() - parsed.t) > 7 * 24 * 60 * 60 * 1000) return 0;
+    let n = 0;
+    posts.forEach(p => {
+      const exists = PIN_DATA.some(x =>
+        (p.firestoreId && x.firestoreId === p.firestoreId) ||
+        (p.id && x.id === p.id) ||
+        (p.vid && x.vid === p.vid) ||
+        (p.src && x.src === p.src && p.title === x.title)
+      );
+      if (exists) return;
+      if (!(p.src || p.vid)) return;
+      PIN_DATA.push({
+        id: p.id || (Date.now() + Math.random()),
+        firestoreId: p.firestoreId || '',
+        firestoreUserId: p.firestoreUserId || '',
+        type: p.type || (p.vid ? 'video' : 'image'),
+        src: p.src || p.vid || '',
+        vid: p.vid || null,
+        title: p.title || 'Post',
+        desc: p.desc || '',
+        cat: p.cat || 'Home',
+        likes: p.likes || 0,
+        _postTime: p._postTime || 0,
+        _duration: p._duration || null,
+        user: {
+          name: (p.user && p.user.name) || 'Showfy User',
+          avatar: (p.user && p.user.avatar) || 'https://i.pravatar.cc/60?img=1',
+          followers: (p.user && p.user.followers) || '0'
+        }
+      });
+      n++;
+    });
+    return n;
+  } catch(e) { return 0; }
+}
+function _saveUserPostLocal(entry) {
+  try {
+    const saved = JSON.parse(localStorage.getItem('cp_user_posts') || '[]');
+    // dedupe
+    const filtered = saved.filter(x => x.id !== entry.id && (!entry.firestoreId || x.firestoreId !== entry.firestoreId));
+    filtered.unshift(entry);
+    localStorage.setItem('cp_user_posts', JSON.stringify(filtered.slice(0, 50)));
+  } catch(e) {}
+}
+
+
 // ─── INIT ───
 CATS.filter(c=>c!=='Sab').forEach(c=>{
   const o=document.createElement('option');o.value=c;o.textContent=c;
   document.getElementById('pinCat') && document.getElementById('pinCat').appendChild(o);
 });
 buildCatBar();
+// ── FEED CACHE PEHLE — app open pe turant homepage (YouTube/Pinterest style) ──
+try {
+  const nCache = loadFeedCacheIntoPinData();
+  if (nCache > 0) console.log('✅ Feed cache se', nCache, 'posts instant load');
+} catch(e) {}
+
 // ── LOCALSTORAGE SE USER POSTS LOAD KARO (refresh pe bhi dikhen) ──
 try {
   const savedPosts = JSON.parse(localStorage.getItem('cp_user_posts') || '[]');
@@ -7960,9 +8285,12 @@ function initFirebase() {
   db = firebase.firestore();
   fbAuth = firebase.auth();
 
-  // ✅ PAGE LOAD: Dummy data turant render karo, Firestore bhi turant load karo
-  applyFilters(); // Turant dummy posts dikha do
-  loadAllPostsFromFirestore(); // Turant uploaded posts bhi load karo
+  // ✅ PAGE LOAD: Agar cache/local se pehle se pins hain to dubara full re-render mat karo
+  // (YouTube/Pinterest jaisa — open karte hi pehle wala feed dikhe, phir background sync)
+  if (!document.querySelector('#grid .pin')) {
+    applyFilters();
+  }
+  loadAllPostsFromFirestore(); // Background sync — naye posts merge
   _triggerAd('banner'); // ✅ App khulte hi bottom banner ad dikhao (persistent)
 
   // ✅ REAL-TIME SYNC — jab bhi koi bhi user (kisi bhi phone se) naya post
@@ -7977,8 +8305,16 @@ function initFirebase() {
         if (change.type !== 'added') return;
         const doc = change.doc;
         const raw = doc.data();
-        // Already in feed? Skip.
-        if (PIN_DATA.some(p => p.firestoreId === doc.id)) return;
+        // Already in feed? Skip (firestoreId OR local id from fresh upload).
+        if (PIN_DATA.some(p => p.firestoreId === doc.id || (raw.id && p.id === raw.id))) return;
+        const _rtTitle = (raw.title || '').trim().toLowerCase();
+        const _rtUser = (raw.userName || '').trim().toLowerCase();
+        if (_rtTitle && PIN_DATA.some(p => {
+          if ((p.title||'').trim().toLowerCase() !== _rtTitle) return false;
+          if (((p.user&&p.user.name)||'').trim().toLowerCase() !== _rtUser) return false;
+          const t = p._postTime || p._uploadTime || 0;
+          return t && (Date.now() - t) < 120000;
+        })) return;
         const srcUrl = raw.src || raw.vid || '';
         if (!srcUrl || srcUrl.startsWith('data:') || srcUrl.startsWith('blob:')) return;
         if (typeof checkAdultContent === 'function') {
@@ -8012,7 +8348,10 @@ function initFirebase() {
         });
         changed = true;
       });
-      if (changed) applyFilters();
+      if (changed) {
+        applyFilters();
+        if (typeof saveFeedCache === 'function') saveFeedCache();
+      }
     }, err => { console.log('Realtime listener error (will retry on next load):', err.message); });
 
   // Auth state listener — jab bhi login/logout ho
@@ -8114,9 +8453,16 @@ async function loadAllPostsFromFirestore() {
       // ✅ Check duplicate by firestoreId OR by matching id (fresh upload already in PIN_DATA)
       const existingPin = PIN_DATA.find(p => p.firestoreId === doc.id || (sd.id && p.id === sd.id));
       if (existingPin) {
-        // ✅ Already in PIN_DATA (e.g. from fresh upload) — sirf firestoreId merge karo,
-        // _postTime aur baaki fields ko overwrite mat karo
         if (!existingPin.firestoreId) existingPin.firestoreId = doc.id;
+        // Keep local R2/data thumbnail if Firestore only has video URL
+        const fsSrc = sd.src || '';
+        const localSrc = existingPin.src || '';
+        const fsIsVideo = /\.(mp4|webm|mov)(\?|$)/i.test(fsSrc) || (fsSrc.includes('b-cdn.net') && !fsSrc.includes('thumbnail'));
+        if (localSrc && (localSrc.startsWith('http') || localSrc.startsWith('data:image')) && (!fsSrc || fsIsVideo)) {
+          /* keep existingPin.src */
+        } else if (fsSrc && !fsIsVideo && fsSrc.startsWith('http')) {
+          existingPin.src = fsSrc;
+        }
         return;
       }
       const exists = false;
@@ -8175,8 +8521,10 @@ async function loadAllPostsFromFirestore() {
     });
 
     console.log('✅ Firestore posts processed:', added, 'new added, total PIN_DATA:', PIN_DATA.length);
-    // ✅ Hamesha applyFilters call karo — chahe added=0 ho
-    applyFilters();
+    // Cache se pehle se dikh raha ho to sirf naye posts par re-render (flicker kam)
+    if (added > 0) applyFilters();
+    else if (!document.querySelector('#grid .pin')) applyFilters();
+    if (typeof saveFeedCache === 'function') saveFeedCache();
   } catch(e) {
     console.error('All posts load fail:', e.message);
     // Fallback — dummy data ke saath bhi render karo
@@ -8638,7 +8986,10 @@ document.addEventListener('keydown', e => {
   <div class="affiliate-sheet">
     <div class="aff-handle"></div>
     <div class="aff-header">
-      <h3>🛍️ Create Affiliate Post</h3>
+      <div style="flex:1">
+        <h3 style="margin:0">🛍️ Create Affiliate Post</h3>
+        <div id="affFreeBadge" style="display:inline-block;margin-top:6px;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;background:rgba(255,159,0,.12);color:#c2410c">🎁 Free ads left: 3 / 3</div>
+      </div>
       <button onclick="closeAffiliateModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;line-height:1">✕</button>
     </div>
     <div class="aff-body">
