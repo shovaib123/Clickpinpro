@@ -3775,21 +3775,119 @@ function closeReels(){
 // dete hain, taaki kabhi bhi ek se zyada video ki awaaz na aaye.
 function _pauseAllOtherReelVideos(exceptVid){
   document.querySelectorAll('#reelsView .rs-video').forEach(v=>{
-    if(v!==exceptVid && !v.paused){ v.pause(); v.muted = true; }
+    if(v!==exceptVid){
+      try { v.pause(); } catch(e){}
+    }
   });
+}
+// Nearby reels only load src — mobile Chrome ~6-8 decoder limit fix
+function _reelPosterUrl(p) {
+  const s = p.src || '';
+  const isVidLike = !s || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(s) ||
+    (s.includes('b-cdn.net') && !s.includes('thumbnail')) ||
+    s.includes('/video/');
+  if (!isVidLike && s.startsWith('http')) {
+    return (typeof _safeImgParams === 'function') ? _safeImgParams(s, 'auto=format&fit=crop&w=507&h=900') : s;
+  }
+  const v = p.vid || s || '';
+  const m = String(v).match(/https?:\/\/([a-z0-9\-]+\.b-cdn\.net)\/([a-f0-9\-]+)\//i);
+  if (m) return 'https://' + m[1] + '/' + m[2] + '/thumbnail.jpg';
+  if (s && s.startsWith('http') && !isVidLike) return s;
+  return '';
+}
+function _ensureReelVideoSrc(vid) {
+  if (!vid) return;
+  const want = vid.dataset.src || '';
+  if (!want) return;
+  if (vid.getAttribute('src') !== want) {
+    vid.src = want;
+    try { vid.load(); } catch(e){}
+  }
+}
+function _unloadFarReelVideos(keepVid) {
+  const slides = Array.from(document.querySelectorAll('#reelsView .rs-slide'));
+  let keepIdx = slides.findIndex(s => s.contains(keepVid));
+  if (keepIdx < 0) keepIdx = 0;
+  slides.forEach((slide, idx) => {
+    const v = slide.querySelector('.rs-video');
+    if (!v || v === keepVid) return;
+    if (Math.abs(idx - keepIdx) <= 1) {
+      // Prefetch neighbor
+      _ensureReelVideoSrc(v);
+      try { v.pause(); } catch(e){}
+      return;
+    }
+    // Far: free decoder
+    try { v.pause(); } catch(e){}
+    if (v.getAttribute('src')) {
+      v.removeAttribute('src');
+      try { v.load(); } catch(e){}
+    }
+  });
+}
+function _playReelVideo(vid) {
+  if (!vid || !document.getElementById('reelsView')?.classList.contains('open')) return;
+  _pauseAllOtherReelVideos(vid);
+  _unloadFarReelVideos(vid);
+  _ensureReelVideoSrc(vid);
+  // Sound: respect user choice after they unmuted once; autoplay still needs muted first time
+  const wantSound = window._reelsMuted === false;
+  vid.volume = 1;
+  vid.muted = !wantSound;
+  const tryPlay = () => {
+    const p = vid.play();
+    if (p && p.then) {
+      p.then(() => {
+        vid.style.opacity = '1';
+        const slide = vid.closest('.rs-slide');
+        if (slide) slide.classList.remove('paused');
+      }).catch(() => {
+        // Autoplay with sound blocked — play muted but DON'T reset user preference if they already chose sound
+        // Only force mute for this play attempt
+        vid.muted = true;
+        vid.play().then(() => {
+          vid.style.opacity = '1';
+          if (wantSound && !window._reelsAutoMuteNotified) {
+            window._reelsAutoMuteNotified = true;
+            window._reelsMuted = true;
+            document.querySelectorAll('[id^="muteBtn"] .rs-act-ic').forEach(ic => { ic.textContent = '🔇'; });
+            toast('🔊 Sound on karne ke liye 🔊 icon dabao');
+          }
+        }).catch(()=>{});
+      });
+    }
+  };
+  if (vid.readyState >= 2) tryPlay();
+  else {
+    const onReady = () => { vid.removeEventListener('loadeddata', onReady); tryPlay(); };
+    vid.addEventListener('loadeddata', onReady);
+    // Fallback if loadeddata never fires
+    setTimeout(() => { try { vid.removeEventListener('loadeddata', onReady); } catch(e){} tryPlay(); }, 800);
+  }
 }
 function buildReelsView(reels, startId){
   const sc=document.getElementById('rsScroll');
-  // ✅ FIX: naya reels list banane se pehle purani (agar koi chal rahi ho)
-  // videos ko explicitly pause karo — sirf innerHTML badalne se kabhi-kabhi
-  // audio thodi der background mein bajti reh jaati thi is se pehle ki naya
-  // content aaye.
-  sc.querySelectorAll('.rs-video').forEach(v => { try { v.pause(); v.src = ''; v.load(); } catch(e){} });
-  sc.innerHTML=reels.map((p,i)=>`
-    <div class="rs-slide" id="rss${p.id}">
-      <div class="rs-bg" style="background-image:url('${_safeImgParams(p.src, 'auto=format&w=50')}')"></div>
-      ${p.vid?`<video class="rs-video" id="rsv${p.id}" src="${p.vid}" poster="${_safeImgParams(p.src, 'auto=format&fit=crop&w=507&h=900')}" loop playsinline disablePictureInPicture disableRemotePlayback preload="${i<2?'auto':'none'}" onclick="toggleReelPlay(${p.id})"></video>`
-              :`<img class="rs-thumb" src="${_safeImgParams(p.src, 'auto=format&fit=crop&w=507&h=900')}" loading="${i<3?'eager':'lazy'}">`}
+  sc.querySelectorAll('.rs-video').forEach(v => { try { v.pause(); v.removeAttribute('src'); v.load(); } catch(e){} });
+  // Put start reel first in DOM order near index for easier prefetch — keep original order, just mark start index
+  let startIndex = 0;
+  if (startId) {
+    const si = reels.findIndex(p => p.id === startId);
+    if (si >= 0) startIndex = si;
+  }
+  sc.innerHTML=reels.map((p,i)=>{
+    const poster = _reelPosterUrl(p);
+    const vidUrl = p.vid || '';
+    // Only attach src for start ±1 — rest data-src only (prevents 7-8 decoder limit)
+    const near = Math.abs(i - startIndex) <= 1;
+    const srcAttr = (near && vidUrl) ? `src="${vidUrl}"` : '';
+    const dataSrc = vidUrl ? `data-src="${vidUrl}"` : '';
+    const posterAttr = poster ? `poster="${poster}"` : '';
+    const bg = poster ? `background-image:url('${poster}')` : 'background:#000';
+    return `
+    <div class="rs-slide" id="rss${p.id}" data-reel-idx="${i}">
+      <div class="rs-bg" style="${bg}"></div>
+      ${vidUrl?`<video class="rs-video" id="rsv${p.id}" ${dataSrc} ${srcAttr} ${posterAttr} loop playsinline webkit-playsinline disablePictureInPicture disableRemotePlayback preload="${near?'auto':'none'}" onclick="toggleReelPlay(${p.id})" style="opacity:${near?1:0}"></video>`
+              :`<img class="rs-thumb" src="${poster||''}" loading="${i<3?'eager':'lazy'}">`}
       <div class="rs-ov"></div>
       <div class="rs-pause-ic"><span>⏸️</span></div>
       <div class="rs-top">
@@ -3799,21 +3897,20 @@ function buildReelsView(reels, startId){
       </div>
       <div class="rs-info">
         <div class="rs-user-row">
-          <img src="${p.user.avatar}" alt="${p.user.name}">
-          <div><span class="rs-uname">${p.user.name}</span><span class="rs-uhandle">@${p.user.name.toLowerCase().replace(' ','_')}</span></div>
+          <img src="${(p.user&&p.user.avatar)||''}" alt="${(p.user&&p.user.name)||''}">
+          <div><span class="rs-uname">${(p.user&&p.user.name)||'User'}</span><span class="rs-uhandle">@${((p.user&&p.user.name)||'user').toLowerCase().replace(/\s+/g,'_')}</span></div>
           <button class="rs-follow" onclick="this.classList.toggle('on');toast(this.classList.contains('on')?'✅ Following!':'Unfollow ho gaya')">Follow</button>
         </div>
         <div class="rs-caption">${p.title ? `<div class="rs-title" style="font-weight:700;margin-bottom:2px">${p.title}</div>` : ''}${(p.desc && p.desc !== 'New post') ? `<div class="rs-desc">${p.desc}</div>` : ''}</div>
-        <div class="rs-tags"><span class="rs-tag">#${p.cat}</span><span class="rs-tag">#Showfy</span><span class="rs-tag">#India</span></div>
+        <div class="rs-tags"><span class="rs-tag">#${p.cat||'Showfy'}</span><span class="rs-tag">#Showfy</span></div>
       </div>
       <div class="rs-actions">
         <button class="rs-act" data-liked="${likedSet.has(p.id)?'1':'0'}" onclick="tgReelLike(this,${p.id})">
           <div class="rs-act-ic" id="rlc${p.id}">${likedSet.has(p.id)?'❤️':'🤍'}</div><span class="rs-act-lbl" id="rln${p.id}">${p.likes>=1000?(p.likes/1000).toFixed(1)+'k':p.likes}</span>
         </button>
-        <button class="rs-act" onclick="openComments(${p.id})"><div class="rs-act-ic">💬</div><span class="rs-act-lbl" id="rcn${p.id}">${(commentsDB[p.id]||[]).length}</span></button>
-        <button class="rs-act" onclick="openShareFor(new Event('x'),${p.id})"><div class="rs-act-ic">📤</div><span class="rs-act-lbl">Share</span></button>
+        <button class="rs-act" onclick="openShareFor(event,${p.id})"><div class="rs-act-ic">📤</div><span class="rs-act-lbl">Share</span></button>
         <button class="rs-act" id="muteBtn${p.id}" onclick="toggleReelMute(event,${p.id})"><div class="rs-act-ic">${window._reelsMuted?'🔇':'🔊'}</div></button>
-        <button class="rs-act" onclick="toggleReelMoreMenu(event,${p.id})"><div class="rs-act-ic">⋮</div></button>
+        <button class="rs-act" onclick="toggleReelMoreMenu(event,${p.id})"><div class="rs-act-ic">⋯</div></button>
         <div class="rs-more-menu" id="rsMoreMenu${p.id}" style="display:none;position:absolute;right:54px;bottom:0;background:#1c1c1e;border-radius:14px;overflow:hidden;min-width:160px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:60">
           <button onclick="tgSave(new Event('x'),${p.id});toggleReelMoreMenu(event,${p.id})" style="width:100%;text-align:left;background:none;border:none;padding:13px 16px;font-size:13px;font-weight:600;color:#fff;cursor:pointer;display:flex;align-items:center;gap:10px">🔖 Save</button>
           <button onclick="dlPin(new Event('x'),${p.id});toggleReelMoreMenu(event,${p.id})" style="width:100%;text-align:left;background:none;border:none;padding:13px 16px;font-size:13px;font-weight:600;color:#fff;cursor:pointer;display:flex;align-items:center;gap:10px">⬇️ Download</button>
@@ -3823,110 +3920,87 @@ function buildReelsView(reels, startId){
           <button class="del-btn" data-owner="${(p.user&&p.user.name)||''}" onclick="deletePin(event,${p.id});toggleReelMoreMenu(event,${p.id})" style="width:100%;text-align:left;background:none;border:none;padding:13px 16px;font-size:13px;font-weight:600;color:#ff3b30;cursor:pointer;align-items:center;gap:10px;display:none">🗑️ Delete</button>
         </div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   refreshDeleteButtons();
-  // Disconnect any previous reels observer before creating a new one
   if (window._reelsObs) { try { window._reelsObs.disconnect(); } catch(e){} window._reelsObs = null; }
-  // IntersectionObserver for autoplay — stored globally so closeReels() can disconnect it
-  window._reelsObs=new IntersectionObserver(entries=>{entries.forEach(e=>{
-    const vid=e.target.querySelector('.rs-video');
-    if(vid){
-      if(e.isIntersecting){
-        _pauseAllOtherReelVideos(vid);
-        vid.volume = 1;
-        vid.muted = window._reelsMuted === true;
-        vid.play().catch(()=>{
-          vid.muted = true;
-          vid.play().catch(()=>{});
-          // ✅ FIX: pehle yahan sirf video ko chup-chaap mute kar diya
-          // jaata tha, lekin upar wala 🔊 button ka icon update nahi hota
-          // tha — isliye button "sound on hai" hi dikhata rehta tha, jab ki
-          // asal mein video mute thi. User ko button 2 baar dabana padta
-          // tha (off karke on) taaki sach mein awaaz aaye. Ab jaise hi
-          // browser autoplay-with-sound ko block karta hai, hum turant
-          // global mute-state aur button ka icon dono sync kar dete hain
-          // (🔇 dikhayenge) — taaki ek hi tap mein sahi se unmute ho jaaye.
-          window._reelsMuted = true;
-          document.querySelectorAll('[id^="muteBtn"] .rs-act-ic').forEach(ic => { ic.textContent = '🔇'; });
-          // ✅ NEW (safe, additive-only): ek hi baar batao ki sound kyun band hai
-          if (!window._reelsAutoMuteNotified) {
-            window._reelsAutoMuteNotified = true;
-            toast('🔊 Sound on karne ke liye 🔊 icon dabao');
+  // Lower threshold + rootMargin so next reel starts loading before fully on screen
+  window._reelsObs = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      const vid = e.target.querySelector('.rs-video');
+      if (!vid) return;
+      if (e.isIntersecting && e.intersectionRatio >= 0.55) {
+        _playReelVideo(vid);
+        if (typeof _reelSwipeCount === 'number') {
+          _reelSwipeCount++;
+          if (typeof AD_CONFIG !== 'undefined' && _reelSwipeCount % (AD_CONFIG.interstitialEveryNReels || 99) === 0) {
+            try { _triggerAd('interstitial'); } catch(err){}
           }
-        });
-        _reelSwipeCount++;
-        if (_reelSwipeCount % AD_CONFIG.interstitialEveryNReels === 0) _triggerAd('interstitial');
-      } else {
-        if (vid.currentTime > 0 && vid.duration > 0) {
-          const postId = parseInt((vid.id || '').replace('rsv', ''), 10);
-          if (!isNaN(postId)) trackWatchTime(postId, vid.currentTime, vid.duration);
         }
-        vid.pause();vid.currentTime=0;
+      } else if (!e.isIntersecting) {
+        try {
+          if (vid.currentTime > 0 && vid.duration > 0) {
+            const postId = parseInt((vid.id || '').replace('rsv', ''), 10);
+            if (!isNaN(postId) && typeof trackWatchTime === 'function') trackWatchTime(postId, vid.currentTime, vid.duration);
+          }
+        } catch(err){}
+        try { vid.pause(); } catch(err){}
+        // Do NOT reset currentTime to 0 here — causes wrong poster flash
+        vid.style.opacity = '0';
       }
-    }
-  });},{threshold:0.8});
-  sc.querySelectorAll('.rs-slide').forEach(s=>window._reelsObs.observe(s));
+    });
+  }, { threshold: [0.55, 0.75], rootMargin: '20% 0px' });
+  sc.querySelectorAll('.rs-slide').forEach(s => window._reelsObs.observe(s));
 
-  // ✅ FIX: Pehle target slide ka pata scrollTop ko window.innerHeight se
-  // divide karke (guess) lagaya jaata tha. Mobile browsers mein scroll ke
-  // dauraan address-bar chhupne/dikhne se window.innerHeight beech mein hi
-  // badal jaata hai — isse galat slide select ho jaati thi aur bilkul
-  // doosri (jaise "D" ki jagah "C") reel khul jaati thi. Ab hum seedha
-  // startId (jis reel pe tap kiya gaya) ko use karte hain — koi guessing
-  // nahi, hamesha sahi reel hi target hogi.
   const targetSlideEl = startId ? document.getElementById('rss'+startId) : sc.querySelector('.rs-slide');
   if (startId && targetSlideEl) {
-    // Instant jump — smooth scroll ki zarurat nahi, view khulte hi seedha sahi reel pe hona chahiye
     setTimeout(()=>{ targetSlideEl.scrollIntoView({ block: 'start' }); }, 30);
   }
   setTimeout(()=>{
     const fv = targetSlideEl ? targetSlideEl.querySelector('.rs-video') : null;
-    if(fv && fv.paused){_pauseAllOtherReelVideos(fv);fv.muted=window._reelsMuted===true;fv.play().catch(()=>{
-      fv.muted=true;
-      fv.play().catch(()=>{});
-      window._reelsMuted = true;
-      document.querySelectorAll('[id^="muteBtn"] .rs-act-ic').forEach(ic => { ic.textContent = '🔇'; });
-      if (!window._reelsAutoMuteNotified) {
-        window._reelsAutoMuteNotified = true;
-        toast('🔊 Sound on karne ke liye 🔊 icon dabao');
-      }
-    });}
-  },400);
+    if (fv) _playReelVideo(fv);
+  }, 200);
 }
 function toggleReelPlay(id){
   const vid=document.getElementById('rsv'+id),slide=document.getElementById('rss'+id);
   if(!vid)return;
   if(vid.paused){
-    _pauseAllOtherReelVideos(vid);
-    // User tap = gesture → browser allows sound. Unmute on intentional play.
+    // User tap = gesture → try with sound
     window._reelsMuted = false;
-    vid.muted = false;
-    vid.volume = 1;
     document.querySelectorAll('[id^="muteBtn"] .rs-act-ic').forEach(ic => { ic.textContent = '🔊'; });
-    vid.play().catch(()=>{
-      // Fallback if still blocked
-      vid.muted = true;
-      window._reelsMuted = true;
-      document.querySelectorAll('[id^="muteBtn"] .rs-act-ic').forEach(ic => { ic.textContent = '🔇'; });
-      vid.play().catch(()=>{});
-    });
-    slide.classList.remove('paused');
+    _playReelVideo(vid);
+    if(slide) slide.classList.remove('paused');
   } else {
     vid.pause();
-    slide.classList.add('paused');
+    if(slide) slide.classList.add('paused');
   }
 }
-// ✅ Mute/Unmute toggle — sab reels ke liye global state, applies to currently playing video
-window._reelsMuted = false;
+// Default muted for reliable autoplay; user unmute persists across reels
+window._reelsMuted = true;
 function toggleReelMute(e, id){
   if(e&&e.stopPropagation) e.stopPropagation();
   window._reelsMuted = !window._reelsMuted;
-  // Currently visible/playing video pe turant apply karo
-  document.querySelectorAll('.rs-video').forEach(v => { v.muted = window._reelsMuted; });
-  // Sab mute buttons ka icon update karo
+  document.querySelectorAll('#reelsView .rs-video').forEach(v => {
+    v.muted = window._reelsMuted;
+    if (!window._reelsMuted && v.paused === false) {
+      // Already playing — sound should apply immediately
+      v.volume = 1;
+    }
+  });
   document.querySelectorAll('[id^="muteBtn"] .rs-act-ic').forEach(ic => {
     ic.textContent = window._reelsMuted ? '🔇' : '🔊';
   });
+  if (!window._reelsMuted) {
+    // If current was muted-only play, kick play again with sound after gesture
+    const cur = document.querySelector('#reelsView .rs-slide .rs-video');
+    // find most visible playing or paused current
+    document.querySelectorAll('#reelsView .rs-video').forEach(v => {
+      if (!v.paused || (v.getBoundingClientRect().top < window.innerHeight && v.getBoundingClientRect().bottom > 0)) {
+        if (v.paused) _playReelVideo(v);
+        else { v.muted = false; v.volume = 1; }
+      }
+    });
+  }
 }
 // ✅ Reel feed ke ⋮ More menu (Save/Collection/Note)
 function toggleReelMoreMenu(e, id){
