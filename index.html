@@ -3402,13 +3402,11 @@ function openDetail(id){
     p0.vid = p0.src;
     if (!p0.type || p0.type === 'image') p0.type = 'video';
   }
-  // ✅ SMART ROUTING — type + duration
-  if (p0.type === 'reel' || (p0.type === 'video' && p0.vid && (!(typeof p0._duration === 'number') || p0._duration <= 60))) {
-    closeDetail();
-    openReels(new Event('x'), id);
-    return;
-  }
-  if (p0.type === 'video' && typeof p0._duration === 'number' && p0._duration > 0 && p0._duration <= 60) {
+  // ✅ SMART ROUTING — reels + short videos → fullscreen reels player
+  const hasVid = !!(p0.vid || (p0.src && _looksVideoUrl(p0.src)));
+  const dur = (typeof p0._duration === 'number' && p0._duration > 0) ? p0._duration : null;
+  const isShort = dur === null || dur <= 90;
+  if (hasVid && (p0.type === 'reel' || p0.type === 'video') && isShort) {
     closeDetail();
     openReels(new Event('x'), id);
     return;
@@ -3436,7 +3434,8 @@ function openDetail(id){
   const fullSrc = isB64src ? p.src : (p.src ? p.src.split('?')[0] + '?w=800&auto=format' : '');
 
   if ((isReel || isVid || playUrl) && playUrl) {
-    mediaHtml = `<video id="detailVideo" src="${playUrl}" ${posterSrc ? 'poster="'+posterSrc+'"' : ''} controls playsinline webkit-playsinline disablePictureInPicture disableRemotePlayback preload="auto" style="width:100%;height:100%;object-fit:contain;display:block;background:#000;min-height:200px"></video>`;
+    // muted autoplay works on mobile; sound on after user taps unmute/controls
+    mediaHtml = `<video id="detailVideo" src="${playUrl}" ${posterSrc ? 'poster="'+posterSrc+'"' : ''} controls playsinline webkit-playsinline autoplay muted disablePictureInPicture disableRemotePlayback preload="auto" style="width:100%;height:100%;object-fit:contain;display:block;background:#000;min-height:240px"></video>`;
   } else if (isReel) {
     mediaHtml = `<img src="${posterSrc || fullSrc}" style="width:100%;height:100%;object-fit:contain;display:block" alt="${p.title||''}">`;
   } else {
@@ -3446,12 +3445,23 @@ function openDetail(id){
   if ((isReel || isVid || playUrl) && playUrl) {
     setTimeout(() => {
       const _dv = document.getElementById('detailVideo');
-      if (_dv && _dv.paused) {
-        _dv.volume = 1;
-        _dv.muted = false;
-        _dv.play().catch(() => { /* user can tap controls */ });
+      if (!_dv) return;
+      _dv.setAttribute('playsinline', '');
+      _dv.setAttribute('webkit-playsinline', '');
+      _dv.playsInline = true;
+      _dv.volume = 1;
+      // Step 1: always start MUTED so autoplay is allowed
+      _dv.muted = true;
+      const tryPlay = () => {
+        const pr = _dv.play();
+        if (pr && pr.catch) pr.catch(() => {});
+      };
+      if (_dv.readyState >= 2) tryPlay();
+      else {
+        _dv.addEventListener('loadeddata', tryPlay, { once: true });
+        setTimeout(tryPlay, 400);
       }
-    }, 80);
+    }, 60);
   }
   document.getElementById('detailTitle').textContent=p.title;
   const descEl = document.getElementById('detailDesc');
@@ -3981,9 +3991,14 @@ async function deletePin(e, id) {
 }
 function openReels(e,startId){
   if(e&&e.stopPropagation)e.stopPropagation();
+  // Close anything that can cover reels (profile / settings / detail)
   try {
-    const pp = document.getElementById('profilePage');
-    if (pp && pp.classList.contains('open') && typeof closeUserProfile === 'function') closeUserProfile();
+    ['profilePage','settingsPage','inboxPage','boardsPage'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.remove('open');
+    });
+    const dm = document.getElementById('detailModal');
+    if (dm) dm.classList.remove('open');
   } catch(err) {}
   _hardStopAllVideos();
   window._reelsAutoMuteNotified = false; // ✅ har naye reels session mein ek baar hint dikhane ke liye reset
@@ -4115,31 +4130,42 @@ function _unloadFarReelVideos(keepVid) {
 }
 function _playReelVideo(vid) {
   if (!vid || !document.getElementById('reelsView')?.classList.contains('open')) return;
-  _pauseAllOtherReelVideos(vid);
+  // Hide every other reel video so wrong frame/poster never flashes
+  document.querySelectorAll('#reelsView .rs-video').forEach(v => {
+    if (v === vid) {
+      v.style.opacity = '1';
+      v.style.visibility = 'visible';
+      v.style.zIndex = '2';
+      v.style.display = 'block';
+    } else {
+      try { v.pause(); } catch(e){}
+      v.style.opacity = '0';
+      v.style.visibility = 'hidden';
+    }
+  });
   _unloadFarReelVideos(vid);
   _ensureReelVideoSrc(vid);
-  // Always visible — never leave audio-only black screen
-  vid.style.opacity = '1';
-  vid.style.visibility = 'visible';
-  vid.style.display = 'block';
-  vid.style.zIndex = '2';
-  // Sound: respect user choice after they unmuted once; autoplay still needs muted first time
+  // Own poster only — clear cross-contaminated poster
+  if (vid.dataset.poster) {
+    vid.setAttribute('poster', vid.dataset.poster);
+  }
   const wantSound = window._reelsMuted === false;
   vid.volume = 1;
   vid.muted = !wantSound;
   const tryPlay = () => {
+    if (!document.getElementById('reelsView')?.classList.contains('open')) return;
     const p = vid.play();
     if (p && p.then) {
       p.then(() => {
         vid.style.opacity = '1';
+        vid.style.visibility = 'visible';
         const slide = vid.closest('.rs-slide');
         if (slide) slide.classList.remove('paused');
       }).catch(() => {
-        // Autoplay with sound blocked — play muted but DON'T reset user preference if they already chose sound
-        // Only force mute for this play attempt
         vid.muted = true;
         vid.play().then(() => {
           vid.style.opacity = '1';
+          vid.style.visibility = 'visible';
           if (wantSound && !window._reelsAutoMuteNotified) {
             window._reelsAutoMuteNotified = true;
             window._reelsMuted = true;
@@ -4154,8 +4180,7 @@ function _playReelVideo(vid) {
   else {
     const onReady = () => { vid.removeEventListener('loadeddata', onReady); tryPlay(); };
     vid.addEventListener('loadeddata', onReady);
-    // Fallback if loadeddata never fires
-    setTimeout(() => { try { vid.removeEventListener('loadeddata', onReady); } catch(e){} tryPlay(); }, 800);
+    setTimeout(() => { try { vid.removeEventListener('loadeddata', onReady); } catch(e){} tryPlay(); }, 600);
   }
 }
 function buildReelsView(reels, startId){
@@ -4172,14 +4197,17 @@ function buildReelsView(reels, startId){
     const vidUrl = p.vid || '';
     // Only attach src for start ±1 — rest data-src only (prevents 7-8 decoder limit)
     const near = Math.abs(i - startIndex) <= 1;
+    const isStart = (i === startIndex);
     const srcAttr = (near && vidUrl) ? `src="${vidUrl}"` : '';
     const dataSrc = vidUrl ? `data-src="${vidUrl}"` : '';
-    const posterAttr = poster ? `poster="${poster}"` : '';
-    const bg = poster ? `background-image:url('${poster}')` : 'background:#000';
+    // Poster ONLY on starting slide — others solid black until their turn (no wrong-thumb flash)
+    const posterAttr = (isStart && poster) ? `poster="${poster}"` : '';
+    const dataPoster = poster ? `data-poster="${poster}"` : '';
+    const bg = (isStart && poster) ? `background-image:url('${poster}')` : 'background:#000';
     return `
     <div class="rs-slide" id="rss${p.id}" data-reel-idx="${i}">
       <div class="rs-bg" style="${bg}"></div>
-      ${vidUrl?`<video class="rs-video" id="rsv${p.id}" ${dataSrc} ${srcAttr} ${posterAttr} loop playsinline webkit-playsinline disablePictureInPicture disableRemotePlayback preload="${near?'auto':'none'}" onclick="toggleReelPlay(${p.id})" style="opacity:1"></video>`
+      ${vidUrl?`<video class="rs-video" id="rsv${p.id}" ${dataSrc} ${srcAttr} ${posterAttr} ${dataPoster} loop playsinline webkit-playsinline disablePictureInPicture disableRemotePlayback preload="${near?'auto':'none'}" onclick="toggleReelPlay(${p.id})" style="opacity:${isStart?1:0};visibility:${isStart?'visible':'hidden'};background:#000"></video>`
               :`<img class="rs-thumb" src="${poster||''}" loading="${i<3?'eager':'lazy'}">`}
       <div class="rs-ov"></div>
       <div class="rs-pause-ic"><span>⏸️</span></div>
